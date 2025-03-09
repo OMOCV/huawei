@@ -1,2 +1,2 @@
 # huawei-price-script
-华为商城比价脚本
+华为相关模块与脚本
