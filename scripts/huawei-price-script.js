@@ -1,7 +1,6 @@
 /*
 # 华为商城比价(弹窗通知版)
 # 适用于华为商城App及网页版
-# 基于京东比价脚本修改
 
 # 功能：
 # 1. 监控华为商城商品页面
@@ -16,18 +15,25 @@ http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/inde
 hostname = m.vmall.com, www.vmall.com
 */
 
-const consolelog = false;
+const consolelog = true; // Changed to true for debugging
 const url = $request.url;
 const $ = new Env("华为商城比价");
 
+// Add debug logging
+console.log(`[DEBUG] 请求URL: ${url}`);
+
 // 检查是否包含prdId参数
 var prdIdMatch = url.match(/[?&]prdId=(\d+)/);
+console.log(`[DEBUG] prdId匹配结果: ${JSON.stringify(prdIdMatch)}`);
+
 if (prdIdMatch) {
     // 从URL参数中提取ID
     let productId = prdIdMatch[1];
     let shareUrl = "https://www.vmall.com/product/" + productId + '.html';
+    console.log(`[DEBUG] 使用prdId参数提取: ${productId}, 共享URL: ${shareUrl}`);
     
     request_history_price(shareUrl).then(data => {
+        console.log(`[DEBUG] API响应: ${JSON.stringify(data)}`);
         if (data) {
             if (data.ok === 1 && data.single) {
                 const lower = lowerMsgs(data.single);
@@ -38,27 +44,34 @@ if (prdIdMatch) {
             } else if (data.ok === 0 && data.msg?.length > 0) {
                 const message = "慢慢买提示您：" + data.msg;
                 $.msg('比价结果', '', message);
+                console.log(`[DEBUG] API返回信息: ${data.msg}`);
             } else {
                 $.msg('比价结果', '', '未获取到价格数据');
+                console.log(`[DEBUG] 未获取到价格数据: ${JSON.stringify(data)}`);
             }
             $done({});
         } else {
             $.msg('比价失败', '', '请求价格数据失败，请稍后再试');
+            console.log(`[DEBUG] 请求价格数据失败，空响应`);
             $done({});
         }
     }).catch(error => {
-        console.log('Error:', error);
+        console.log(`[DEBUG] 详细错误: ${error.message}, ${error.stack}`);
         $.msg('比价失败', '', '请求价格数据出错，请稍后再试');
         $done({});
     });
 } else {
     // 尝试旧格式URL
     var oldFormatMatch = url.match(/product\/(\d+)\.html/);
+    console.log(`[DEBUG] 旧格式URL匹配结果: ${JSON.stringify(oldFormatMatch)}`);
+    
     if (oldFormatMatch) {
         let productId = oldFormatMatch[1];
         let shareUrl = "https://www.vmall.com/product/" + productId + '.html';
+        console.log(`[DEBUG] 使用旧格式提取: ${productId}, 共享URL: ${shareUrl}`);
         
         request_history_price(shareUrl).then(data => {
+            console.log(`[DEBUG] API响应: ${JSON.stringify(data)}`);
             if (data) {
                 if (data.ok === 1 && data.single) {
                     const lower = lowerMsgs(data.single);
@@ -69,20 +82,24 @@ if (prdIdMatch) {
                 } else if (data.ok === 0 && data.msg?.length > 0) {
                     const message = "慢慢买提示您：" + data.msg;
                     $.msg('比价结果', '', message);
+                    console.log(`[DEBUG] API返回信息: ${data.msg}`);
                 } else {
                     $.msg('比价结果', '', '未获取到价格数据');
+                    console.log(`[DEBUG] 未获取到价格数据: ${JSON.stringify(data)}`);
                 }
                 $done({});
             } else {
                 $.msg('比价失败', '', '请求价格数据失败，请稍后再试');
+                console.log(`[DEBUG] 请求价格数据失败，空响应`);
                 $done({});
             }
         }).catch(error => {
-            console.log('Error:', error);
+            console.log(`[DEBUG] 详细错误: ${error.message}, ${error.stack}`);
             $.msg('比价失败', '', '请求价格数据出错，请稍后再试');
             $done({});
         });
     } else {
+        console.log(`[DEBUG] 未能匹配产品ID，URL不符合任何已知格式`);
         $.msg('华为商城比价', '无法识别商品ID', '请确认访问的是华为商城商品页面');
         $done({});
     }
@@ -149,7 +166,7 @@ function historySummary(single) {
     try {
         singleArray = JSON.parse(`[${single.jiagequshiyh}]`);
     } catch (e) {
-        console.log("解析价格历史数据失败:", e);
+        console.log(`[DEBUG] 解析价格历史数据失败: ${e.message}`);
         return [];
     }
     
@@ -214,6 +231,7 @@ function difference(currentPrice, price, precision = 2) {
 
 function request_history_price(share_url) {
     return new Promise((resolve, reject) => {
+        console.log(`[DEBUG] 请求价格历史数据，URL: ${share_url}`);
         const options = {
             url: "https://apapia-history.manmanbuy.com/ChromeWidgetServices/WidgetServices.ashx",
             headers: {
@@ -223,17 +241,19 @@ function request_history_price(share_url) {
             body: 'methodName=getHistoryTrend&p_url=' + encodeURIComponent(share_url)
         };
         
+        console.log(`[DEBUG] 请求选项: ${JSON.stringify(options)}`);
         $.post(options, (error, response, data) => {
             if (error) {
-                consolelog && console.log("Error:\n" + error);
+                console.log(`[DEBUG] 请求错误: ${JSON.stringify(error)}`);
                 reject(error);
             } else {
-                consolelog && console.log("Data:\n" + data);
+                console.log(`[DEBUG] 价格API响应状态码: ${response?.statusCode}`);
+                console.log(`[DEBUG] 价格API响应数据: ${data?.substring(0, 200)}...`);
                 try {
                     const jsonData = JSON.parse(data);
                     resolve(jsonData);
                 } catch (e) {
-                    console.log("Error parsing JSON:", e);
+                    console.log(`[DEBUG] JSON解析错误: ${e.message}`);
                     reject(e);
                 }
             }
