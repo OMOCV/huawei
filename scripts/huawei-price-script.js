@@ -10,7 +10,7 @@
 # 4. 支持显示双11、618等活动价格对比
 
 [rewrite_local]
-http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/script/huawei_price.js, timeout=60, tag=华为商城比价
+http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
 
 [mitm]
 hostname = m.vmall.com, www.vmall.com
