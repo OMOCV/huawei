@@ -1,150 +1,45 @@
 /*
-# 华为商城比价(弹窗通知版) - 什么值得买数据源
+# 华为商城比价(弹窗通知版) - 调试版
 # 适用于华为商城App及网页版
-# 基于京东比价脚本修改
-
-# 功能：
-# 1. 监控华为商城商品页面
-# 2. 从什么值得买获取商品历史价格数据
-# 3. 弹窗展示历史最低价及价格变化趋势
-# 4. 支持多种URL格式
-
-[rewrite_local]
-http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
-
-[mitm]
-hostname = m.vmall.com, www.vmall.com
 */
 
-const consolelog = true; // 开启日志便于调试
+const consolelog = true; // 开启日志
 const url = $request.url;
 const $ = new Env("华为商城比价");
 
+// 显示调试信息
+console.log(`[调试] 正在处理URL: ${url}`);
+$.msg("华为比价调试", "脚本已启动", `正在处理: ${url}`);
+
 // 检查是否包含prdId参数
 var prdIdMatch = url.match(/[?&]prdId=(\d+)/);
+var productId;
+
 if (prdIdMatch) {
     // 从URL参数中提取ID
-    let productId = prdIdMatch[1];
-    
-    // 使用什么值得买接口获取价格数据
-    smzdm_price_detect(productId, url);
+    productId = prdIdMatch[1];
+    console.log(`[调试] 从URL参数提取到商品ID: ${productId}`);
 } else {
     // 尝试旧格式URL
     var oldFormatMatch = url.match(/product\/(\d+)\.html/);
     if (oldFormatMatch) {
-        let productId = oldFormatMatch[1];
-        
-        // 使用什么值得买接口获取价格数据
-        smzdm_price_detect(productId, url);
+        productId = oldFormatMatch[1];
+        console.log(`[调试] 从URL路径提取到商品ID: ${productId}`);
     } else {
+        console.log(`[调试] 无法识别商品ID, URL: ${url}`);
         $.msg('华为商城比价', '无法识别商品ID', '请确认访问的是华为商城商品页面');
         $done({});
+        return;
     }
 }
 
-// 通过什么值得买接口获取价格数据
-function smzdm_price_detect(productId, originalUrl) {
-    const options = {
-        url: `https://search.smzdm.com/?c=home&s=华为+${productId}&order=time&v=b`,
-        headers: {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
-        }
-    };
+// 直接从华为商城获取价格信息
+fetchDirectFromHuawei(url, productId);
+
+// 直接从华为商城获取信息
+function fetchDirectFromHuawei(originalUrl, productId) {
+    console.log(`[调试] 正在直接从华为商城获取价格, ID: ${productId}`);
     
-    $.get(options, (error, response, html) => {
-        if (error) {
-            console.log('Error:', error);
-            $.msg('比价失败', '', '请求价格数据出错，请稍后再试');
-            $done({});
-            return;
-        }
-        
-        try {
-            // 解析搜索结果页面
-            const productInfo = parseSmzdmHtml(html, productId);
-            
-            if (productInfo) {
-                // 成功找到商品信息
-                const title = productInfo.title || "华为商品";
-                const currentPrice = productInfo.price || "未知";
-                const historyLow = productInfo.historyLow || "未知";
-                const historyLowDate = productInfo.historyLowDate || "未知";
-                
-                // 构建通知内容
-                const message = `当前价:¥${currentPrice} 历史最低:¥${historyLow}(${historyLowDate})`;
-                const detail = productInfo.priceHistory || "暂无历史价格数据";
-                
-                // 显示通知
-                $.msg(title, message, detail);
-            } else {
-                // 未找到商品
-                fetchFromHuaweiMall(originalUrl);
-            }
-            $done({});
-        } catch (e) {
-            console.log('解析错误:', e);
-            // 备用方案：直接从华为商城获取当前价格
-            fetchFromHuaweiMall(originalUrl);
-        }
-    });
-}
-
-// 解析什么值得买HTML
-function parseSmzdmHtml(html, productId) {
-    // 检查是否有搜索结果
-    if (html.includes('没有找到相关商品') || !html.includes('feed-block-title')) {
-        console.log('什么值得买没有找到相关商品');
-        return null;
-    }
-    
-    try {
-        // 提取第一个商品结果
-        const titleMatch = html.match(/<h5 class="feed-block-title"[^>]*>(.*?)<\/h5>/s);
-        const priceMatch = html.match(/class="price-region[^>]*>.*?<span class="price-number[^>]*>(\d+\.?\d*)/s);
-        const historyLowMatch = html.match(/历史低价：<span>(\d+\.?\d*)元<\/span>\s*<span>\((.*?)\)/s);
-        
-        // 提取价格趋势
-        const priceHistory = extractPriceTrend(html);
-        
-        return {
-            title: titleMatch ? cleanHtml(titleMatch[1]) : `华为商品(${productId})`,
-            price: priceMatch ? priceMatch[1] : "查询中",
-            historyLow: historyLowMatch ? historyLowMatch[1] : "未知",
-            historyLowDate: historyLowMatch ? historyLowMatch[2] : "未知日期",
-            priceHistory: priceHistory || "价格趋势数据暂不可用"
-        };
-    } catch (e) {
-        console.log('解析商品数据出错:', e);
-        return null;
-    }
-}
-
-// 提取价格趋势数据
-function extractPriceTrend(html) {
-    // 尝试从HTML中提取价格趋势文本
-    // 这部分可能需要根据具体的HTML结构调整
-    const trendMatch = html.match(/价格走势[^>]*>([\s\S]*?)<\/div>/);
-    if (trendMatch) {
-        // 清理HTML标签并整理格式
-        let trend = cleanHtml(trendMatch[1]);
-        // 格式化为更易读的形式
-        trend = trend.replace(/(\d{4}-\d{2}-\d{2})/g, '\n$1');
-        return trend;
-    }
-    
-    // 如果没有找到价格趋势，生成一个基础的价格信息
-    return "最近价格数据暂不可用\n请前往什么值得买APP查看完整价格走势";
-}
-
-// 清理HTML标签
-function cleanHtml(html) {
-    return html.replace(/<[^>]*>/g, '').replace(/&[^;]+;/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-// 备用方案：直接从华为商城获取当前价格
-function fetchFromHuaweiMall(originalUrl) {
     const options = {
         url: originalUrl,
         headers: {
@@ -154,22 +49,48 @@ function fetchFromHuaweiMall(originalUrl) {
     
     $.get(options, (error, response, html) => {
         if (error) {
-            $.msg('比价失败', '', '无法获取商品数据，请稍后再试');
+            console.log(`[调试] 请求华为商城出错: ${error}`);
+            $.msg('比价失败', '调试信息', `请求华为商城出错: ${JSON.stringify(error).substring(0,100)}`);
             $done({});
             return;
         }
         
+        console.log(`[调试] 收到华为商城响应, 长度: ${html.length}`);
+        console.log(`[调试] 响应预览: ${html.substring(0, 200)}`);
+        
         try {
-            // 提取商品名称和价格
+            // 提取商品名称
             const titleMatch = html.match(/<title>(.*?)<\/title>/);
-            const priceMatch = html.match(/"price":"(\d+\.?\d*)"/);
+            const title = titleMatch ? titleMatch[1].replace(/- 华为商城/, '') : `华为商品(${productId})`;
+            console.log(`[调试] 提取到标题: ${title}`);
             
-            const title = titleMatch ? titleMatch[1].replace(/- 华为商城/, '') : "华为商品";
-            const price = priceMatch ? priceMatch[1] : "查询中";
+            // 尝试不同的价格提取模式
+            let price = "未知";
+            let priceMatches = [
+                html.match(/"price":"(\d+\.?\d*)"/),
+                html.match(/price:\s*['"]([\d\.]+)['"]/i),
+                html.match(/价格[：:]\s*¥?\s*([\d\.]+)/),
+                html.match(/原价[：:]\s*¥?\s*([\d\.]+)/)
+            ];
             
-            $.msg(title, `当前价:¥${price}`, "无法获取历史价格数据\n建议前往什么值得买APP查询更多价格信息");
+            for (let match of priceMatches) {
+                if (match && match[1]) {
+                    price = match[1];
+                    console.log(`[调试] 找到价格: ${price}`);
+                    break;
+                }
+            }
+            
+            // 直接显示提取到的信息
+            $.msg(
+                title, 
+                `当前价格: ¥${price}`, 
+                `商品ID: ${productId}\n无法获取历史价格数据\n调试信息: 页面长度${html.length}字符`
+            );
+            
         } catch (e) {
-            $.msg('比价失败', '', '解析商品数据出错，请稍后再试');
+            console.log(`[调试] 解析错误: ${e.message}`);
+            $.msg('比价调试', '解析出错', `错误信息: ${e.message}`);
         }
         $done({});
     });
