@@ -10,8 +10,7 @@
 # 4. 支持显示双11、618等活动价格对比
 
 [rewrite_local]
-http-request ^https?:\/\/m\.vmall\.com\/product\/.*\.html script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
-http-request ^https?:\/\/www\.vmall\.com\/product\/.*\.html script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
+http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
 
 [mitm]
 hostname = m.vmall.com, www.vmall.com
@@ -20,16 +19,14 @@ hostname = m.vmall.com, www.vmall.com
 const consolelog = false;
 const url = $request.url;
 const $ = new Env("华为商城比价");
-var regex = /product\/(\d+)\.html/;
-var match = url.match(regex);
 
-if (!match) {
-    $.msg('华为商城比价', '无法识别商品ID', '请确认访问的是华为商城商品页面');
-    $done({});
-} else {
-    let productId = match[1];
+// 检查是否包含prdId参数
+var prdIdMatch = url.match(/[?&]prdId=(\d+)/);
+if (prdIdMatch) {
+    // 从URL参数中提取ID
+    let productId = prdIdMatch[1];
     let shareUrl = "https://www.vmall.com/product/" + productId + '.html';
-
+    
     request_history_price(shareUrl).then(data => {
         if (data) {
             if (data.ok === 1 && data.single) {
@@ -54,6 +51,41 @@ if (!match) {
         $.msg('比价失败', '', '请求价格数据出错，请稍后再试');
         $done({});
     });
+} else {
+    // 尝试旧格式URL
+    var oldFormatMatch = url.match(/product\/(\d+)\.html/);
+    if (oldFormatMatch) {
+        let productId = oldFormatMatch[1];
+        let shareUrl = "https://www.vmall.com/product/" + productId + '.html';
+        
+        request_history_price(shareUrl).then(data => {
+            if (data) {
+                if (data.ok === 1 && data.single) {
+                    const lower = lowerMsgs(data.single);
+                    const detail = priceSummary(data);
+                    const tip = data.PriceRemark?.Tip ? data.PriceRemark.Tip + "(仅供参考)" : "价格数据仅供参考";
+                    const message = `${lower} ${tip}`;
+                    $.msg(data.single.title, message, detail);
+                } else if (data.ok === 0 && data.msg?.length > 0) {
+                    const message = "慢慢买提示您：" + data.msg;
+                    $.msg('比价结果', '', message);
+                } else {
+                    $.msg('比价结果', '', '未获取到价格数据');
+                }
+                $done({});
+            } else {
+                $.msg('比价失败', '', '请求价格数据失败，请稍后再试');
+                $done({});
+            }
+        }).catch(error => {
+            console.log('Error:', error);
+            $.msg('比价失败', '', '请求价格数据出错，请稍后再试');
+            $done({});
+        });
+    } else {
+        $.msg('华为商城比价', '无法识别商品ID', '请确认访问的是华为商城商品页面');
+        $done({});
+    }
 }
 
 function lowerMsgs(single) {
