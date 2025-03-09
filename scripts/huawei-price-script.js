@@ -10,13 +10,13 @@
 # 4. 支持显示双11、618等活动价格对比
 
 [rewrite_local]
-http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
+http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/script/huawei_price.js, timeout=60, tag=华为商城比价
 
 [mitm]
 hostname = m.vmall.com, www.vmall.com
 */
 
-const consolelog = false;
+const consolelog = true; // 开启日志便于调试
 const url = $request.url;
 const $ = new Env("华为商城比价");
 
@@ -218,22 +218,40 @@ function request_history_price(share_url) {
             url: "https://apapia-history.manmanbuy.com/ChromeWidgetServices/WidgetServices.ashx",
             headers: {
                 "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
+                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Connection": "keep-alive",
+                "Origin": "https://tool.manmanbuy.com",
+                "Referer": "https://tool.manmanbuy.com/historyLowest.aspx",
+                "X-Requested-With": "XMLHttpRequest"
             },
             body: 'methodName=getHistoryTrend&p_url=' + encodeURIComponent(share_url)
         };
+        
+        if (consolelog) console.log(`请求URL: ${share_url}`);
         
         $.post(options, (error, response, data) => {
             if (error) {
                 consolelog && console.log("Error:\n" + error);
                 reject(error);
             } else {
-                consolelog && console.log("Data:\n" + data);
+                consolelog && console.log("Response headers:", JSON.stringify(response.headers));
+                consolelog && console.log("Response data:\n" + data);
+                
                 try {
-                    const jsonData = JSON.parse(data);
-                    resolve(jsonData);
+                    // 检查是否返回了验证页面
+                    if (data.includes('sufei-punish') || data.includes('_____tmd_____')) {
+                        console.log("检测到防爬虫验证页面，请求被拦截");
+                        reject(new Error("请求被反爬虫机制拦截"));
+                    } else {
+                        const jsonData = JSON.parse(data);
+                        resolve(jsonData);
+                    }
                 } catch (e) {
-                    console.log("Error parsing JSON:", e);
+                    console.log("Error parsing response:", e);
+                    console.log("Response data preview:", data.substring(0, 200));
                     reject(e);
                 }
             }
