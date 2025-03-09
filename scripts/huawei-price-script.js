@@ -1,7 +1,7 @@
 /*
-# 华为商城比价(本地解析增强版)
+# 华为商城比价(最终解决方案)
 # 适用于华为商城App及网页版
-# 强化价格提取能力
+# 无需依赖外部API，直接从价格元素和产品模块提取数据
 
 [rewrite_local]
 http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/index\.html\?.*prdId=\d+) script-path=https://raw.githubusercontent.com/OMOCV/huawei-price/main/scripts/huawei-price-script.js, timeout=60, tag=华为商城比价
@@ -9,6 +9,9 @@ http-request ^https?:\/\/(m|www)\.vmall\.com\/product\/(.*\.html|comdetail\/inde
 [mitm]
 hostname = m.vmall.com, www.vmall.com
 */
+
+// 使用严格模式减少错误
+'use strict';
 
 const consolelog = true; // 启用详细日志
 const url = $request.url;
@@ -23,11 +26,21 @@ let productId = extractProductId(url);
 if (productId) {
     console.log(`[DEBUG] 提取到产品ID: ${productId}`);
     
-    // 获取产品信息
-    getProductInfoFromPage(productId).then(productInfo => {
+    // 构建通知
+    let initialMessage = {
+        title: "华为商城比价",
+        subtitle: `正在获取商品ID: ${productId} 的价格信息`,
+        body: "正在分析页面中..."
+    };
+    
+    // 发送初始通知以提供反馈
+    $notification.post(initialMessage.title, initialMessage.subtitle, initialMessage.body);
+    
+    // 获取产品信息 - 使用多个来源
+    getCompleteProductInfo(productId).then(productInfo => {
         if (productInfo) {
-            console.log(`[DEBUG] 提取到商品信息: ${JSON.stringify(productInfo)}`);
-            displayLocalProductInfo(productInfo);
+            console.log(`[DEBUG] 最终提取到商品信息: ${JSON.stringify(productInfo)}`);
+            displayProductInfo(productInfo);
         } else {
             $.msg('华为商城比价', '获取产品信息失败', '无法解析产品数据');
         }
@@ -69,18 +82,102 @@ function extractProductId(url) {
     return null;
 }
 
-// 直接从页面源码获取产品信息
+// 综合获取产品信息，使用多个来源
+async function getCompleteProductInfo(productId) {
+    let productInfo = {
+        id: productId,
+        title: "",
+        price: "",
+        originalPrice: "",
+        promotions: [],
+        possiblePrices: []  // 存储所有可能的价格值
+    };
+    
+    try {
+        // 1. 首先，尝试从页面获取信息
+        const pageInfo = await getProductInfoFromPage(productId);
+        if (pageInfo) {
+            productInfo = mergeProductInfo(productInfo, pageInfo);
+        }
+        
+        // 2. 如果价格仍然未获取，尝试从移动端API获取
+        if (!productInfo.price || productInfo.price === "") {
+            try {
+                const apiInfo = await fetchPriceFromAPI(productId);
+                if (apiInfo && apiInfo.price) {
+                    productInfo.price = apiInfo.price;
+                    if (apiInfo.originalPrice) {
+                        productInfo.originalPrice = apiInfo.originalPrice;
+                    }
+                }
+            } catch (apiErr) {
+                console.log(`[DEBUG] API获取价格失败: ${apiErr}`);
+            }
+        }
+        
+        // 3. 如果仍然没有价格，但有可能的价格列表，使用最可能的价格
+        if ((!productInfo.price || productInfo.price === "") && productInfo.possiblePrices.length > 0) {
+            // 排序可能的价格（通常较高的数字更可能是价格）
+            productInfo.possiblePrices.sort((a, b) => b - a);
+            
+            // 使用最可能的价格
+            if (productInfo.possiblePrices.length >= 2) {
+                // 通常最大的是原价，第二大的是当前价格
+                productInfo.originalPrice = productInfo.possiblePrices[0].toString();
+                productInfo.price = productInfo.possiblePrices[1].toString();
+            } else if (productInfo.possiblePrices.length === 1) {
+                productInfo.price = productInfo.possiblePrices[0].toString();
+            }
+            
+            console.log(`[DEBUG] 使用推断价格：当前价格=${productInfo.price}，原价=${productInfo.originalPrice}`);
+        }
+        
+        return productInfo;
+    } catch (err) {
+        console.log(`[DEBUG] 获取综合产品信息失败: ${err}`);
+        throw err;
+    }
+}
+
+// 合并产品信息，保留有效字段
+function mergeProductInfo(target, source) {
+    if (source.title && source.title !== "") target.title = source.title;
+    if (source.price && source.price !== "") target.price = source.price;
+    if (source.originalPrice && source.originalPrice !== "") target.originalPrice = source.originalPrice;
+    
+    // 合并促销信息
+    if (source.promotions && source.promotions.length > 0) {
+        source.promotions.forEach(promo => {
+            if (!target.promotions.includes(promo)) {
+                target.promotions.push(promo);
+            }
+        });
+    }
+    
+    // 合并可能的价格
+    if (source.possiblePrices && source.possiblePrices.length > 0) {
+        source.possiblePrices.forEach(price => {
+            if (!target.possiblePrices.includes(price)) {
+                target.possiblePrices.push(price);
+            }
+        });
+    }
+    
+    return target;
+}
+
+// 从页面获取产品信息
 async function getProductInfoFromPage(productId) {
     return new Promise((resolve, reject) => {
-        // 构建商品页面URL - 尝试多种URL格式
+        // 尝试多个URL
         const urls = [
-            `https://www.vmall.com/product/${productId}.html`,          // 标准PC网页版
-            `https://m.vmall.com/product/${productId}.html`,            // 移动网页版
-            `https://m.vmall.com/product/comdetail/index.html?prdId=${productId}` // 移动商详页
+            `https://m.vmall.com/product/comdetail/index.html?prdId=${productId}`, // 移动商详页
+            `https://m.vmall.com/product/${productId}.html`,                      // 移动网页版
+            `https://www.vmall.com/product/${productId}.html`                     // 标准PC网页版
         ];
         
-        // 优先使用移动版，数据结构通常更简单
-        const pageUrl = urls[1];
+        // 优先使用移动端URL
+        const pageUrl = urls[0];
         
         // 请求页面
         const options = {
@@ -106,26 +203,9 @@ async function getProductInfoFromPage(productId) {
             // 如果请求成功，从页面内容中提取信息
             if (resp.statusCode === 200 && body) {
                 try {
-                    // 保存HTML到变量以便调试
-                    const htmlContent = body;
-                    
-                    const productInfo = extractProductInfoFromHTML(htmlContent, productId);
-                    
-                    // 如果价格仍未提取到，尝试API方式获取价格
-                    if (!productInfo.price || productInfo.price === "") {
-                        fetchPriceFromAPI(productId).then(priceInfo => {
-                            if (priceInfo && priceInfo.price) {
-                                productInfo.price = priceInfo.price;
-                                productInfo.originalPrice = priceInfo.originalPrice || productInfo.originalPrice;
-                            }
-                            resolve(productInfo);
-                        }).catch(apiErr => {
-                            console.log(`[DEBUG] API获取价格失败: ${apiErr}`);
-                            resolve(productInfo); // 即使API失败也返回已有信息
-                        });
-                    } else {
-                        resolve(productInfo);
-                    }
+                    // 提取产品信息
+                    const productInfo = extractProductInfoFromHTML(body, productId);
+                    resolve(productInfo);
                 } catch (parseErr) {
                     console.log(`[DEBUG] 解析页面内容失败: ${parseErr}`);
                     reject(parseErr);
@@ -138,11 +218,17 @@ async function getProductInfoFromPage(productId) {
     });
 }
 
-// 从华为官方API获取价格
+// 从API获取价格信息
 async function fetchPriceFromAPI(productId) {
     return new Promise((resolve, reject) => {
-        // 华为官方价格API - 移动端
-        const apiUrl = `https://m.vmall.com/mst/price/querySbomPrice?portalId=10016&skuIds=${productId}`;
+        // 尝试多个API端点
+        const apiUrls = [
+            `https://m.vmall.com/mst/price/querySbomPrice?portalId=10016&skuIds=${productId}`,
+            `https://m.vmall.com/product/getPrice?skuId=${productId}`
+        ];
+        
+        // 使用第一个API
+        const apiUrl = apiUrls[0];
         
         const options = {
             url: apiUrl,
@@ -168,8 +254,8 @@ async function fetchPriceFromAPI(productId) {
                 const jsonData = JSON.parse(data);
                 if (jsonData && jsonData.data && jsonData.data.length > 0) {
                     const priceInfo = {
-                        price: jsonData.data[0].price || "",
-                        originalPrice: jsonData.data[0].originPrice || ""
+                        price: jsonData.data[0].price || jsonData.data[0].skuPrice || "",
+                        originalPrice: jsonData.data[0].originPrice || jsonData.data[0].marketPrice || ""
                     };
                     resolve(priceInfo);
                 } else {
@@ -183,7 +269,7 @@ async function fetchPriceFromAPI(productId) {
     });
 }
 
-// 从HTML中提取产品信息 - 增强版
+// 高级HTML分析提取产品信息
 function extractProductInfoFromHTML(html, productId) {
     console.log(`[DEBUG] 开始解析页面内容`);
     
@@ -192,135 +278,157 @@ function extractProductInfoFromHTML(html, productId) {
         title: "",
         price: "",
         originalPrice: "",
-        promotions: []
+        promotions: [],
+        possiblePrices: []
     };
     
     try {
-        // 优先提取JSON数据 - 通常华为商城页面会有产品JSON数据
-        const jsonDataMatch = html.match(/window\.slotData\s*=\s*({.*?});/s) || 
-                            html.match(/window\.product\s*=\s*({.*?});/s) ||
-                            html.match(/var dataLayer\s*=\s*\[(.*?)\];/s);
-                            
-        if (jsonDataMatch && jsonDataMatch[1]) {
-            try {
-                const jsonStr = jsonDataMatch[1].replace(/\\"/g, '"');
-                const productData = JSON.parse(jsonStr);
-                
-                // 从JSON中提取数据
-                if (productData) {
-                    // 提取标题
-                    productInfo.title = productData.name || productData.goods_name || productData.title || productInfo.title;
-                    
-                    // 提取价格
-                    productInfo.price = productData.price || productData.sale_price || productData.salePrice || productInfo.price;
-                    
-                    // 提取原价
-                    productInfo.originalPrice = productData.originalPrice || productData.market_price || productData.marketPrice || productInfo.originalPrice;
-                }
-            } catch (jsonError) {
-                console.log(`[DEBUG] 解析JSON数据失败: ${jsonError.message}`);
-            }
-        }
-        
-        // 如果JSON提取失败，使用正则表达式提取
-        
-        // 提取商品标题 - 多种可能的HTML结构
-        if (!productInfo.title) {
-            const titleMatches = [
-                html.match(/<h1[^>]*class="product-name[^"]*"[^>]*>(.*?)<\/h1>/is),
-                html.match(/<div[^>]*class="product-info[^"]*"[^>]*>[\s\S]*?<h1[^>]*>(.*?)<\/h1>/is),
-                html.match(/<title>(.*?)(?:\s*[-_]\s*华为商城)?<\/title>/is),
-                html.match(/name: ['"]([^'"]+)['"]/is)
-            ];
-            
-            for (const match of titleMatches) {
-                if (match && match[1]) {
-                    productInfo.title = match[1].trim().replace(/<[^>]+>/g, '');
-                    break;
-                }
-            }
-        }
-        
-        // 提取价格信息 - 多种可能的格式
-        if (!productInfo.price) {
-            const priceMatches = [
-                // 数据属性
-                html.match(/data-price=['"]([^'"]+)['"]/i),
-                // JSON字符串内的价格
-                html.match(/\\"price\\":\\s*\\"([^"\\]+)\\"/i),
-                html.match(/\"price\":\\s*\"([^"]+)\"/i),
-                // 价格元素内容
-                html.match(/<span[^>]*class="[^"]*price[^"]*"[^>]*>([\d\.]+)<\/span>/i),
-                // JavaScript变量
-                html.match(/var\s+price\s*=\s*["']([^"']+)["']/i)
-            ];
-            
-            for (const match of priceMatches) {
-                if (match && match[1]) {
-                    productInfo.price = match[1].trim();
-                    break;
-                }
-            }
-        }
-        
-        // 提取原价信息
-        if (!productInfo.originalPrice) {
-            const originalPriceMatches = [
-                // 数据属性
-                html.match(/data-original-price=['"]([^'"]+)['"]/i),
-                // JSON字符串内的原价
-                html.match(/\\"originalPrice\\":\\s*\\"([^"\\]+)\\"/i),
-                html.match(/\"originalPrice\":\\s*\"([^"]+)\"/i),
-                // 原价元素内容
-                html.match(/<[^>]+class="[^"]*original-price[^"]*"[^>]*>([\d\.]+)<\/[^>]+>/i),
-                html.match(/<del[^>]*>([\d\.]+)<\/del>/i),
-                // JavaScript变量
-                html.match(/var\s+originalPrice\s*=\s*["']([^"']+)["']/i)
-            ];
-            
-            for (const match of originalPriceMatches) {
-                if (match && match[1]) {
-                    productInfo.originalPrice = match[1].trim();
-                    break;
-                }
-            }
-        }
-        
-        // 提取促销信息
-        const promotionRegexes = [
-            /<div[^>]*class="[^"]*promotion-tag[^"]*"[^>]*>(.*?)<\/div>/ig,
-            /<div[^>]*class="[^"]*promotion-item[^"]*"[^>]*>(.*?)<\/div>/ig,
-            /<span[^>]*class="[^"]*activity-name[^"]*"[^>]*>(.*?)<\/span>/ig
+        // 1. 提取标题 - 使用多种模式
+        const titlePatterns = [
+            /<h1[^>]*class="[^"]*product-name[^"]*"[^>]*>(.*?)<\/h1>/is,
+            /<div[^>]*class="[^"]*product-info[^"]*"[^>]*>[\s\S]*?<h1[^>]*>(.*?)<\/h1>/is,
+            /<title>(.*?)(?:\s*[-_]\s*华为商城)?<\/title>/is,
+            /name:\s*['"]([^'"]+)['"]/is,
+            /<meta[^>]*property="og:title"[^>]*content="([^"]*)"[^>]*>/i
         ];
         
-        for (const regex of promotionRegexes) {
-            const matches = html.matchAll(regex);
+        for (const pattern of titlePatterns) {
+            const match = html.match(pattern);
+            if (match && match[1]) {
+                productInfo.title = match[1].trim().replace(/<[^>]+>/g, '');
+                console.log(`[DEBUG] 找到标题: ${productInfo.title}`);
+                break;
+            }
+        }
+        
+        // 2. 提取价格 - 使用多种模式
+        const pricePatterns = [
+            // 数据属性
+            /data-price=['"]([^'"]+)['"]/i,
+            /data-current-price=['"]([^'"]+)['"]/i,
+            // JSON字符串内的价格
+            /\\"price\\":\s*\\"([^"\\]+)\\"/i,
+            /\"price\":\s*\"([^"]+)\"/i,
+            /\"salePrice\":\s*\"([^"]+)\"/i,
+            // 价格元素文本
+            /<span[^>]*class="[^"]*price[^"]*"[^>]*>([\d\.]+)<\/span>/i,
+            /<span[^>]*class="[^"]*current-price[^"]*"[^>]*>([\d\.]+)<\/span>/i,
+            // JavaScript变量
+            /var\s+price\s*=\s*["']([^"']+)["']/i,
+            /price:\s*['"]([^'"]+)['"]/i,
+            // 价格元素内容
+            /<[^>]*class="[^"]*price[^"]*"[^>]*>([\d\.]+)<\/[^>]*>/i,
+            // 模块价格
+            /<div[^>]*id="pro-price-text"[^>]*>.*?([0-9]+(?:\.[0-9]+)?)/is
+        ];
+        
+        for (const pattern of pricePatterns) {
+            const match = html.match(pattern);
+            if (match && match[1]) {
+                productInfo.price = match[1].trim();
+                console.log(`[DEBUG] 找到价格: ${productInfo.price}`);
+                break;
+            }
+        }
+        
+        // 3. 提取原价 - 使用多种模式
+        const originalPricePatterns = [
+            // 数据属性
+            /data-original-price=['"]([^'"]+)['"]/i,
+            /data-market-price=['"]([^'"]+)['"]/i,
+            // JSON字符串内的原价
+            /\\"originalPrice\\":\s*\\"([^"\\]+)\\"/i,
+            /\"originalPrice\":\s*\"([^"]+)\"/i,
+            /\"marketPrice\":\s*\"([^"]+)\"/i,
+            // 原价元素内容
+            /<[^>]+class="[^"]*original-price[^"]*"[^>]*>([\d\.]+)<\/[^>]+>/i,
+            /<del[^>]*>([\d\.]+)<\/del>/i,
+            // JavaScript变量
+            /var\s+originalPrice\s*=\s*["']([^"']+)["']/i,
+            /originalPrice:\s*['"]([^'"]+)['"]/i,
+            /marketPrice:\s*['"]([^'"]+)['"]/i
+        ];
+        
+        for (const pattern of originalPricePatterns) {
+            const match = html.match(pattern);
+            if (match && match[1]) {
+                productInfo.originalPrice = match[1].trim();
+                console.log(`[DEBUG] 找到原价: ${productInfo.originalPrice}`);
+                break;
+            }
+        }
+        
+        // 4. 提取所有可能的价格数字 (用于备用)
+        // 提取所有¥符号附近的数字
+        const allPriceMatches = html.match(/¥\s*([0-9]+(?:\.[0-9]+)?)/g);
+        if (allPriceMatches) {
+            allPriceMatches.forEach(match => {
+                const price = match.replace(/¥\s*/, '');
+                const numPrice = parseFloat(price);
+                if (!isNaN(numPrice) && numPrice > 10) { // 过滤掉太小的数值
+                    if (!productInfo.possiblePrices.includes(numPrice)) {
+                        productInfo.possiblePrices.push(numPrice);
+                        console.log(`[DEBUG] 找到可能的价格: ${numPrice}`);
+                    }
+                }
+            });
+        }
+        
+        // 提取所有class中包含price的元素中的纯数字
+        const priceElementMatches = html.match(/<[^>]*class="[^"]*price[^"]*"[^>]*>([\d\.]+)<\/[^>]*>/g);
+        if (priceElementMatches) {
+            priceElementMatches.forEach(match => {
+                const priceMatch = match.match(/>([0-9]+(?:\.[0-9]+)?)</);
+                if (priceMatch && priceMatch[1]) {
+                    const numPrice = parseFloat(priceMatch[1]);
+                    if (!isNaN(numPrice) && numPrice > 10) {
+                        if (!productInfo.possiblePrices.includes(numPrice)) {
+                            productInfo.possiblePrices.push(numPrice);
+                            console.log(`[DEBUG] 找到可能的价格元素: ${numPrice}`);
+                        }
+                    }
+                }
+            });
+        }
+        
+        // 5. 提取促销信息
+        const promotionPatterns = [
+            /<div[^>]*class="[^"]*promotion-tag[^"]*"[^>]*>(.*?)<\/div>/ig,
+            /<div[^>]*class="[^"]*promotion-item[^"]*"[^>]*>(.*?)<\/div>/ig,
+            /<span[^>]*class="[^"]*activity-name[^"]*"[^>]*>(.*?)<\/span>/ig,
+            /<li[^>]*class="[^"]*promotion[^"]*"[^>]*>(.*?)<\/li>/ig
+        ];
+        
+        for (const pattern of promotionPatterns) {
+            const matches = html.matchAll(pattern);
             for (const match of matches) {
                 if (match[1]) {
                     const promoText = match[1].trim().replace(/<[^>]+>/g, '');
                     if (promoText && !productInfo.promotions.includes(promoText)) {
                         productInfo.promotions.push(promoText);
+                        console.log(`[DEBUG] 找到促销信息: ${promoText}`);
                     }
                 }
             }
         }
         
-        console.log(`[DEBUG] 提取到商品信息: ${JSON.stringify(productInfo)}`);
+        console.log(`[DEBUG] 解析完成，提取到商品信息: ${JSON.stringify(productInfo)}`);
         return productInfo;
     } catch (e) {
         console.log(`[DEBUG] 解析页面出错: ${e.message}`);
         return {
             id: productId,
             title: `华为商品 ${productId}`,
-            price: "获取失败",
+            price: "",
             originalPrice: "",
-            promotions: []
+            promotions: [],
+            possiblePrices: []
         };
     }
 }
 
 // 显示产品信息
-function displayLocalProductInfo(productInfo) {
+function displayProductInfo(productInfo) {
     const title = productInfo.title || `华为商品 ${productInfo.id}`;
     
     // 构建价格信息
@@ -337,28 +445,59 @@ function displayLocalProductInfo(productInfo) {
                     const discount = originalPrice - currentPrice;
                     const discountPercent = Math.round((discount / originalPrice) * 100);
                     priceInfo += `\n原价: ¥${productInfo.originalPrice} (降价¥${discount.toFixed(2)}, 降幅${discountPercent}%)`;
-                } else {
-                    priceInfo += `\n原价: ¥${productInfo.originalPrice}`;
+                } else if (!isNaN(currentPrice) && !isNaN(originalPrice)) {
+                    priceInfo += `\n参考价: ¥${productInfo.originalPrice}`;
                 }
             } catch (e) {
-                priceInfo += `\n原价: ¥${productInfo.originalPrice}`;
+                priceInfo += `\n参考价: ¥${productInfo.originalPrice}`;
             }
         }
+        
+        // 如果有多个可能的价格，显示最高3个
+        if ((productInfo.price === "" || productInfo.originalPrice === "") && productInfo.possiblePrices.length > 0) {
+            const topPrices = productInfo.possiblePrices.slice(0, 3).map(p => `¥${p}`).join(', ');
+            priceInfo += `\n可能的其他价格点: ${topPrices}`;
+        }
+    } else if (productInfo.possiblePrices.length > 0) {
+        // 使用可能的价格
+        productInfo.possiblePrices.sort((a, b) => b - a); // 从高到低排序
+        const highestPrice = productInfo.possiblePrices[0];
+        let secondPrice = productInfo.possiblePrices.length > 1 ? productInfo.possiblePrices[1] : null;
+        
+        // 如果两个价格相差不大，可能是舍入导致的重复，取第三个
+        if (secondPrice && (highestPrice - secondPrice) < 1) {
+            secondPrice = productInfo.possiblePrices.length > 2 ? productInfo.possiblePrices[2] : null;
+        }
+        
+        if (secondPrice) {
+            const discount = highestPrice - secondPrice;
+            const discountPercent = Math.round((discount / highestPrice) * 100);
+            priceInfo = `推测价格: ¥${secondPrice}\n参考价: ¥${highestPrice} (差价¥${discount.toFixed(2)}, 约${discountPercent}%)`;
+        } else {
+            priceInfo = `推测价格: ¥${highestPrice}`;
+        }
+        
+        priceInfo += `\n(注: 价格为系统推测，请以商品页面实际价格为准)`;
     } else {
-        priceInfo = "无法获取当前价格，请直接查看商品页面";
+        priceInfo = "无法获取价格信息，请直接前往商品页面查看";
     }
     
     // 构建促销信息
     let promoInfo = "";
     if (productInfo.promotions && productInfo.promotions.length > 0) {
-        promoInfo = "\n\n促销活动:\n" + productInfo.promotions.join("\n");
+        // 最多显示3条促销信息
+        const topPromos = productInfo.promotions.slice(0, 3);
+        promoInfo = "\n\n促销活动:\n" + topPromos.join("\n");
     }
     
     // 构建比价建议
-    const tips = "\n\n由于外部API无法访问，无法获取历史价格数据。建议使用以下方式查询历史价格:\n1. 什么值得买APP\n2. 淘宝比价信息\n3. 考拉历史价格查询";
+    const tips = "\n\n由于外部API无法访问，无法获取完整历史价格数据。建议使用以下方式查询历史价格:\n1. 什么值得买APP\n2. 淘宝比价插件\n3. 百度/Google搜索商品型号+价格";
     
-    // 发送通知
-    $.msg(title, priceInfo, promoInfo + tips);
+    // 使用华为商品完整名称查询
+    const searchTips = `\n\n快捷搜索:\n百度搜索 "${title} 历史价格"`;
+    
+    // 结合所有信息发送通知
+    $.msg(title, priceInfo, promoInfo + tips + searchTips);
 }
 
 // Env函数
