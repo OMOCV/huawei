@@ -20,10 +20,12 @@ hostname = m.vmall.com
 ******************************************
 */
 
-const consolelog = false;
+const consolelog = true; // 启用日志
 const $ = new Env("华为商品监控");
 const PUSH_KEY = "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV"; // PushDeer Key，可替换为您自己的
 const STATUS_CACHE_KEY = "huawei_monitor_status";
+const ENABLE_WORKFLOW_LOG = true; // 启用工作流程日志
+const LOG_PREFIX = "🔄华为监控"; // 日志前缀
 
 // 提取商品ID
 const url = $request.url;
@@ -31,131 +33,209 @@ const prdIdMatch = url.match(/prdId=(\d+)/);
 const productId = prdIdMatch ? prdIdMatch[1] : "10086989076790"; // 默认ID
 const apiUrl = `https://m.vmall.com/product/comdetail/getSkuInfo.json?prdId=${productId}`;
 
-// 主函数 - 优化版，添加超时控制
-function checkProductStatus() {
-    consolelog && console.log(`检查商品ID: ${productId}`);
+// 发送工作流日志
+async function sendWorkflowLog(step, message, isError = false) {
+    if (!ENABLE_WORKFLOW_LOG) return;
     
-    // 设置超时处理，最多10秒
+    const timestamp = $.time('HH:mm:ss.SSS');
+    const logTitle = `${LOG_PREFIX} ${isError ? '❌' : '✅'} 步骤${step}`;
+    const logMessage = `[${timestamp}] ${message}`;
+    
+    consolelog && console.log(logMessage);
+    
+    try {
+        await sendPushDeerNotification(logTitle, logMessage);
+    } catch (e) {
+        consolelog && console.log(`发送日志失败: ${e}`);
+    }
+}
+
+// 主函数 - 工作流增强版
+async function checkProductStatus() {
+    // 脚本启动通知
+    await sendWorkflowLog('0', `脚本启动，检查商品ID: ${productId}`);
+    
+    // 设置超时处理，最多20秒
     const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("操作超时")), 10000);
+        setTimeout(() => {
+            sendWorkflowLog('超时', '脚本执行超过20秒，强制终止', true);
+            reject(new Error("操作超时"));
+        }, 20000);
     });
     
     // 主要处理逻辑
     const processPromise = new Promise(async (resolve) => {
         try {
-            // 直接获取上次状态，避免不必要的API调用
+            // 步骤1: 获取上次状态
+            await sendWorkflowLog('1', '正在读取上次保存的状态...');
             const lastStatus = getLastStatus();
+            if (lastStatus) {
+                await sendWorkflowLog('1.1', `成功读取上次状态，时间: ${lastStatus.timestamp || '未知'}`);
+            } else {
+                await sendWorkflowLog('1.2', '未找到上次状态记录，这可能是首次运行');
+            }
             
-            // 简化的API状态获取
+            // 步骤2: 获取当前API状态
+            await sendWorkflowLog('2', '正在从API获取当前商品状态...');
             const currentStatus = await fetchApiStatus();
+            
             if (!currentStatus) {
-                consolelog && console.log("获取API状态失败");
+                await sendWorkflowLog('2.1', '获取API状态失败，将尝试备用方案', true);
+                await sendWorkflowLog('2.2', '当前版本没有实现备用方案，执行结束', true);
                 resolve();
                 return;
             }
             
-            // 检查状态变化 - 简化逻辑
+            await sendWorkflowLog('2.3', `成功获取商品状态: ${currentStatus.product_name}, 按钮: ${currentStatus.button_mode}, 库存: ${currentStatus.stock_status}`);
+            
+            // 步骤3:, 状态比较
+            await sendWorkflowLog('3', '正在比较状态变化...');
             const [statusChanged, changeDetails] = checkStatusChanges(currentStatus, lastStatus);
             
             if (statusChanged || !lastStatus) {
-                // 保存状态并发送通知
+                await sendWorkflowLog('3.1', `检测到状态变化: ${changeDetails.join(', ') || '首次运行'}`);
+                
+                // 步骤4: 保存新状态
+                await sendWorkflowLog('4', '正在保存新状态...');
                 saveCurrentStatus(currentStatus);
+                await sendWorkflowLog('4.1', '新状态已保存');
+                
+                // 步骤5: 发送状态变化通知
+                await sendWorkflowLog('5', '正在发送状态变化通知...');
                 
                 // 简化消息生成
                 const title = `${currentStatus.product_name || "华为商品"}状态更新`;
-                const subtitle = changeDetails.length > 0 ? changeDetails[0] : "";
+                const subtitle = changeDetails.length > 0 ? changeDetails[0] : "状态已更新";
                 const message = formatNotificationMessage(currentStatus, changeDetails);
                 
                 $.msg(title, subtitle, message);
-                consolelog && console.log("通知已发送");
+                await sendWorkflowLog('5.1', '状态变化通知已发送');
             } else {
-                consolelog && console.log("状态未变化");
+                await sendWorkflowLog('3.2', '商品状态未发生变化');
             }
             
+            // 处理完成
+            await sendWorkflowLog('完成', '脚本执行完毕，无错误');
             resolve();
         } catch (error) {
-            consolelog && console.log(`处理出错: ${error}`);
+            const errorMsg = `处理出错: ${error}`;
+            consolelog && console.log(errorMsg);
+            await sendWorkflowLog('错误', errorMsg, true);
             resolve(); // 即使出错也完成，避免阻塞
         }
     });
     
     // 用 Promise.race 竞争模式处理可能的超时情况
     Promise.race([processPromise, timeoutPromise])
-        .catch(error => {
-            consolelog && console.log(`超时或出错: ${error}`);
+        .catch(async error => {
+            const errorMsg = `超时或出错: ${error}`;
+            consolelog && console.log(errorMsg);
+            await sendWorkflowLog('致命错误', errorMsg, true);
         })
         .finally(() => {
-            $done({});
+            // 尝试发送最终完成通知
+            sendWorkflowLog('退出', '脚本退出').then(() => {
+                setTimeout(() => $done({}), 500); // 确保最后的日志有机会发送
+            });
         });
 }
 
-// 从API获取商品状态 - 优化版，添加超时控制
+// 从API获取商品状态 - 工作流增强版
 function fetchApiStatus() {
-    return new Promise((resolve, reject) => {
-        // 设置3秒超时
-        const timeout = setTimeout(() => {
-            consolelog && console.log("API请求超时");
-            resolve(null); // 超时时返回null而不是reject，避免中断主流程
-        }, 3000);
+    return new Promise(async (resolve, reject) => {
+        await sendWorkflowLog('2-1', `开始API请求: ${apiUrl}`);
         
-        // 简化请求头
+        // 设置5秒超时
+        const timeout = setTimeout(async () => {
+            await sendWorkflowLog('2-2', "API请求超时(5秒)", true);
+            resolve(null); // 超时时返回null而不是reject，避免中断主流程
+        }, 5000);
+        
+        // 请求头
         const headers = {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-            "Referer": $request.url
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Referer": $request.url,
+            "Accept": "application/json, text/javascript, */*; q=0.01"
         };
         
         const options = {
             url: apiUrl,
             headers: headers,
-            timeout: 3000, // 显式设置请求超时
+            timeout: 5000, // 显式设置请求超时
             body: ""
         };
         
-        $.post(options, (error, response, data) => {
+        await sendWorkflowLog('2-3', `API请求已发送，等待响应...`);
+        
+        $.post(options, async (error, response, data) => {
             clearTimeout(timeout); // 清除超时定时器
             
             if (error) {
-                consolelog && console.log(`API错误: ${error}`);
+                await sendWorkflowLog('2-4', `API请求出错: ${error}`, true);
                 resolve(null);
                 return;
             }
             
             try {
-                // 简化响应处理
+                await sendWorkflowLog('2-5', `API响应状态码: ${response?.status || '未知'}`);
+                
+                // 检查响应
                 if (!data || response.status !== 200) {
-                    consolelog && console.log("无效响应");
+                    await sendWorkflowLog('2-6', `无效响应: ${response?.status || '未知状态码'}, 内容长度: ${data?.length || 0}`, true);
                     resolve(null);
                     return;
                 }
                 
-                const apiData = JSON.parse(data);
-                const productInfo = apiData.skuInfo || {};
+                await sendWorkflowLog('2-7', `API响应数据长度: ${data.length}`);
                 
-                resolve({
-                    "source": "api",
-                    "product_name": productInfo.prdName || '未知产品',
-                    "button_mode": productInfo.buttonMode || '',
-                    "stock_status": productInfo.stokStatus || '',
-                    "timestamp": $.time('MM-dd HH:mm:ss') // 使用更轻量的时间格式
-                });
+                // 数据解析
+                try {
+                    const apiData = JSON.parse(data);
+                    await sendWorkflowLog('2-8', `成功解析JSON响应`);
+                    
+                    const productInfo = apiData.skuInfo || {};
+                    const timestamp = $.time('MM-dd HH:mm:ss');
+                    
+                    // 产品信息提取
+                    const productStatus = {
+                        "source": "api",
+                        "product_name": productInfo.prdName || '未知产品',
+                        "button_mode": productInfo.buttonMode || '',
+                        "stock_status": productInfo.stokStatus || '',
+                        "raw_status": JSON.stringify(productInfo).substring(0, 100) + '...', // 保存部分原始数据便于调试
+                        "timestamp": timestamp
+                    };
+                    
+                    await sendWorkflowLog('2-9', `成功提取商品信息: ${productStatus.product_name}`);
+                    resolve(productStatus);
+                } catch (parseError) {
+                    // JSON解析错误
+                    await sendWorkflowLog('2-10', `JSON解析出错: ${parseError}, 数据前100字符: ${data.substring(0, 100)}`, true);
+                    resolve(null);
+                }
             } catch (e) {
-                consolelog && console.log(`解析错误: ${e}`);
+                await sendWorkflowLog('2-11', `处理API响应时发生异常: ${e}`, true);
                 resolve(null);
             }
         });
     });
 }
 
-// 检查状态变化并生成变化详情 - 优化版
-function checkStatusChanges(current, last) {
+// 检查状态变化并生成变化详情 - 工作流增强版
+async function checkStatusChanges(current, last) {
     // 无上次状态或上次状态格式不对
     if (!last || typeof last !== 'object') {
+        await sendWorkflowLog('3-1', `没有有效的历史状态，视为首次检查`);
         return [true, ["首次检查"]];
     }
+    
+    await sendWorkflowLog('3-2', `开始比较状态: 上次[${last.button_mode || '无'}, ${last.stock_status || '无'}], 当前[${current.button_mode || '无'}, ${current.stock_status || '无'}]`);
     
     // 快速对比，避免深入比较
     if (current.button_mode === last.button_mode && 
         current.stock_status === last.stock_status) {
+        await sendWorkflowLog('3-3', `状态未变化: 按钮和库存状态相同`);
         return [false, []];
     }
     
@@ -163,54 +243,103 @@ function checkStatusChanges(current, last) {
     
     // 只关注核心状态变化
     if (current.button_mode !== last.button_mode) {
-        changeDetails.push(`按钮状态: ${last.button_mode || '无'} → ${current.button_mode || '无'}`);
+        const detail = `按钮状态: ${last.button_mode || '无'} → ${current.button_mode || '无'}`;
+        changeDetails.push(detail);
+        await sendWorkflowLog('3-4', `检测到按钮状态变化: ${detail}`);
     }
     
     if (current.stock_status !== last.stock_status) {
-        changeDetails.push(`库存状态: ${last.stock_status || '无'} → ${current.stock_status || '无'}`);
+        const detail = `库存状态: ${last.stock_status || '无'} → ${current.stock_status || '无'}`;
+        changeDetails.push(detail);
+        await sendWorkflowLog('3-5', `检测到库存状态变化: ${detail}`);
     }
     
+    await sendWorkflowLog('3-6', `状态比较完成，发现 ${changeDetails.length} 处变化`);
     return [true, changeDetails];
 }
 
-// 格式化通知消息 - 优化版，更简洁
-function formatNotificationMessage(currentStatus, changeDetails) {
-    // 简化消息生成，减少字符串连接操作
-    return `产品: ${currentStatus.product_name || '未知'}\n` +
-           (changeDetails.length > 0 ? `变化:\n${changeDetails.join('\n')}\n\n` : '') +
-           `当前状态: ${currentStatus.button_mode || '未知'}\n` +
-           `库存: ${currentStatus.stock_status || '未知'}\n` +
-           `来源: ${currentStatus.source || 'API'}\n` +
-           `时间: ${currentStatus.timestamp}`;
+// 格式化通知消息 - 工作流增强版
+async function formatNotificationMessage(currentStatus, changeDetails) {
+    await sendWorkflowLog('5-1', `正在格式化通知消息...`);
+    
+    // 生成详细的通知消息
+    const message = 
+        `### ${currentStatus.product_name || '华为商品'} 状态报告\n\n` +
+        `**检测时间**: ${currentStatus.timestamp}\n\n` +
+        (changeDetails.length > 0 ? 
+            `**变化详情**:\n${changeDetails.map(d => `- ${d}`).join('\n')}\n\n` : 
+            '') +
+        `**当前按钮状态**: ${currentStatus.button_mode || '未知'}\n\n` +
+        `**当前库存状态**: ${currentStatus.stock_status || '未知'}\n\n` +
+        `**数据来源**: ${currentStatus.source || 'API'}\n\n` +
+        `---\n` +
+        `*点击通知查看详情*`;
+    
+    await sendWorkflowLog('5-2', `通知消息已格式化，长度: ${message.length}字符`);
+    return message;
 }
 
-// 获取上次保存的状态
+// 获取上次保存的状态 - 工作流增强版
 function getLastStatus() {
     try {
         const savedStatus = $.getdata(STATUS_CACHE_KEY);
-        return savedStatus ? JSON.parse(savedStatus) : null;
+        if (!savedStatus) {
+            consolelog && console.log("没有找到缓存的状态");
+            return null;
+        }
+        
+        consolelog && console.log(`找到缓存的状态，长度: ${savedStatus.length}`);
+        
+        try {
+            const parsedStatus = JSON.parse(savedStatus);
+            consolelog && console.log(`成功解析缓存状态: ${parsedStatus.product_name || '未知产品'}`);
+            return parsedStatus;
+        } catch (parseError) {
+            consolelog && console.log(`解析缓存状态出错: ${parseError}`);
+            // 尝试再次写入一条日志通知
+            sendWorkflowLog('1-错误', `解析缓存状态失败: ${parseError}，数据可能已损坏`, true);
+            return null;
+        }
     } catch (e) {
         consolelog && console.log(`读取缓存状态出错: ${e}`);
+        // 尝试再次写入一条日志通知
+        sendWorkflowLog('1-错误', `读取缓存状态时出错: ${e}`, true);
         return null;
     }
 }
 
-// 保存当前状态
+// 保存当前状态 - 工作流增强版
 function saveCurrentStatus(status) {
     try {
-        $.setdata(JSON.stringify(status), STATUS_CACHE_KEY);
+        const jsonStatus = JSON.stringify(status);
+        consolelog && console.log(`准备保存状态，数据长度: ${jsonStatus.length}`);
+        
+        const saveResult = $.setdata(jsonStatus, STATUS_CACHE_KEY);
+        if (saveResult) {
+            consolelog && console.log(`状态保存成功`);
+        } else {
+            consolelog && console.log(`状态保存失败`);
+            // 尝试写入一条日志通知
+            sendWorkflowLog('4-错误', `状态保存失败，可能存储空间不足`, true);
+        }
     } catch (e) {
         consolelog && console.log(`保存状态出错: ${e}`);
+        // 尝试写入一条日志通知
+        sendWorkflowLog('4-错误', `保存状态时出错: ${e}`, true);
     }
 }
 
-// 发送PushDeer通知（可选，当弹窗通知不满足需求时使用）
+// 发送PushDeer通知 - 工作流增强版
 async function sendPushDeerNotification(text, desp) {
     return new Promise((resolve, reject) => {
         if (!PUSH_KEY) {
+            consolelog && console.log("未配置PushDeer Key，跳过通知");
             resolve(false);
             return;
         }
+        
+        const timestamp = $.time('HH:mm:ss');
+        consolelog && console.log(`[${timestamp}] 发送PushDeer通知: ${text}`);
         
         const options = {
             url: "https://api2.pushdeer.com/message/push",
@@ -220,13 +349,14 @@ async function sendPushDeerNotification(text, desp) {
             body: JSON.stringify({
                 pushkey: PUSH_KEY,
                 text: text,
-                desp: desp
+                desp: desp,
+                type: "markdown" // 使用markdown格式
             })
         };
         
         $.post(options, (error, response, data) => {
             if (error) {
-                consolelog && console.log(`PushDeer通知发送失败: ${error}`);
+                consolelog && console.log(`[${$.time('HH:mm:ss')}] PushDeer通知发送失败: ${error}`);
                 resolve(false);
                 return;
             }
@@ -234,14 +364,14 @@ async function sendPushDeerNotification(text, desp) {
             try {
                 const res = JSON.parse(data);
                 if (res.code === 0) {
-                    consolelog && console.log("PushDeer通知发送成功");
+                    consolelog && console.log(`[${$.time('HH:mm:ss')}] PushDeer通知发送成功`);
                     resolve(true);
                 } else {
-                    consolelog && console.log(`PushDeer通知发送失败: ${res.message}`);
+                    consolelog && console.log(`[${$.time('HH:mm:ss')}] PushDeer通知发送失败: ${JSON.stringify(res)}`);
                     resolve(false);
                 }
             } catch (e) {
-                consolelog && console.log(`解析PushDeer响应出错: ${e}`);
+                consolelog && console.log(`[${$.time('HH:mm:ss')}] 解析PushDeer响应出错: ${e}, 响应数据: ${data}`);
                 resolve(false);
             }
         });
