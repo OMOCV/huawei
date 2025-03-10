@@ -1,0 +1,48 @@
+{
+  "id": "huaweiMonitor.app.sub",
+  "name": "华为商品监控",
+  "author": "@OMOCV",
+  "icon": "https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Huawei.png",
+  "repo": "https://github.com/OMOCV/huawei",
+  "apps": [
+    {
+      "id": "huaweiMonitor",
+      "name": "华为商品监控",
+      "desc": "监控华为商城商品状态变化",
+      "keys": ["huawei_products_list", "huawei_monitor_status"],
+      "settings": [
+        {
+          "id": "huawei_products_list",
+          "name": "监控商品列表",
+          "type": "textarea",
+          "placeholder": "请按照格式输入商品ID和名称，例如：\n[\n  {\n    \"id\": \"10086989076790\",\n    \"name\": \"Mate 60 Pro\"\n  }\n]",
+          "autoGrow": true,
+          "desc": "JSON格式的商品列表配置"
+        },
+        {
+          "id": "huawei_push_key",
+          "name": "PushDeer Key",
+          "type": "text",
+          "placeholder": "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV",
+          "desc": "用于发送通知的PushDeer Key"
+        },
+        {
+          "id": "huawei_check_interval",
+          "name": "检查间隔(分钟)",
+          "type": "number",
+          "placeholder": "30",
+          "desc": "自定义检查间隔，默认30分钟"
+        },
+        {
+          "id": "huawei_enable_workflow_log",
+          "name": "启用详细日志",
+          "type": "boolean",
+          "desc": "是否启用详细的工作流日志通知"
+        }
+      ],
+      "author": "@OMOCV",
+      "repo": "https://github.com/OMOCV/huawei",
+      "icons": ["https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Huawei_1.png", "https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Huawei.png"]
+    }
+  ]
+}
