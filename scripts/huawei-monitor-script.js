@@ -50,17 +50,17 @@ async function sendWorkflowLog(step, message, isError = false) {
     }
 }
 
-// 主函数 - 工作流增强版
+// 主函数 - 备用方案增强版
 async function checkProductStatus() {
     // 脚本启动通知
     await sendWorkflowLog('0', `脚本启动，检查商品ID: ${productId}`);
     
-    // 设置超时处理，最多20秒
+    // 设置超时处理，最多30秒
     const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => {
-            sendWorkflowLog('超时', '脚本执行超过20秒，强制终止', true);
+            sendWorkflowLog('超时', '脚本执行超过30秒，强制终止', true);
             reject(new Error("操作超时"));
-        }, 20000);
+        }, 30000);
     });
     
     // 主要处理逻辑
@@ -81,38 +81,26 @@ async function checkProductStatus() {
             
             if (!currentStatus) {
                 await sendWorkflowLog('2.1', '获取API状态失败，将尝试备用方案', true);
+                
+                // 尝试从商品详情页直接获取信息
                 await sendWorkflowLog('2.2', '当前版本没有实现备用方案，执行结束', true);
+                
+                // 现在我们添加实现备用方案 - 直接请求商品页面
+                const pageStatus = await fetchProductPage();
+                if (pageStatus) {
+                    await compareAndNotify(pageStatus, lastStatus);
+                } else {
+                    await sendWorkflowLog('页面备用', '无法从页面获取商品信息，所有方案都失败', true);
+                }
+                
                 resolve();
                 return;
             }
             
             await sendWorkflowLog('2.3', `成功获取商品状态: ${currentStatus.product_name}, 按钮: ${currentStatus.button_mode}, 库存: ${currentStatus.stock_status}`);
             
-            // 步骤3:, 状态比较
-            await sendWorkflowLog('3', '正在比较状态变化...');
-            const [statusChanged, changeDetails] = checkStatusChanges(currentStatus, lastStatus);
-            
-            if (statusChanged || !lastStatus) {
-                await sendWorkflowLog('3.1', `检测到状态变化: ${changeDetails.join(', ') || '首次运行'}`);
-                
-                // 步骤4: 保存新状态
-                await sendWorkflowLog('4', '正在保存新状态...');
-                saveCurrentStatus(currentStatus);
-                await sendWorkflowLog('4.1', '新状态已保存');
-                
-                // 步骤5: 发送状态变化通知
-                await sendWorkflowLog('5', '正在发送状态变化通知...');
-                
-                // 简化消息生成
-                const title = `${currentStatus.product_name || "华为商品"}状态更新`;
-                const subtitle = changeDetails.length > 0 ? changeDetails[0] : "状态已更新";
-                const message = formatNotificationMessage(currentStatus, changeDetails);
-                
-                $.msg(title, subtitle, message);
-                await sendWorkflowLog('5.1', '状态变化通知已发送');
-            } else {
-                await sendWorkflowLog('3.2', '商品状态未发生变化');
-            }
+            // 进行状态比较和通知
+            await compareAndNotify(currentStatus, lastStatus);
             
             // 处理完成
             await sendWorkflowLog('完成', '脚本执行完毕，无错误');
@@ -135,12 +123,97 @@ async function checkProductStatus() {
         .finally(() => {
             // 尝试发送最终完成通知
             sendWorkflowLog('退出', '脚本退出').then(() => {
-                setTimeout(() => $done({}), 500); // 确保最后的日志有机会发送
+                setTimeout(() => $done({}), 1000); // 确保最后的日志有机会发送
             });
         });
 }
 
-// 从API获取商品状态 - 工作流增强版
+// 从产品页面获取信息的备用方案
+async function fetchProductPage() {
+    await sendWorkflowLog('P1', `使用备用方案：直接抓取商品页面`);
+    
+    const productUrl = `https://m.vmall.com/product/${productId}.html`;
+    
+    try {
+        // 使用GET请求获取商品页面
+        const headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Connection": "keep-alive"
+        };
+        
+        return new Promise((resolve) => {
+            const options = {
+                url: productUrl,
+                headers: headers,
+                timeout: 10000 // 给页面加载更多时间
+            };
+            
+            await sendWorkflowLog('P2', `请求商品页面: ${productUrl}`);
+            
+            $.get(options, async (error, response, data) => {
+                if (error) {
+                    await sendWorkflowLog('P3', `页面请求出错: ${error}`, true);
+                    resolve(null);
+                    return;
+                }
+                
+                if (!data || response.status !== 200) {
+                    await sendWorkflowLog('P4', `页面响应无效: ${response?.status || '未知状态码'}`, true);
+                    resolve(null);
+                    return;
+                }
+                
+                await sendWorkflowLog('P5', `成功获取页面，内容长度: ${data.length}`);
+                
+                // 从HTML提取信息
+                const productInfo = await extractFromHtml(data);
+                if (productInfo) {
+                    await sendWorkflowLog('P6', `成功从页面提取商品信息: ${productInfo.product_name}`);
+                    resolve(productInfo);
+                } else {
+                    await sendWorkflowLog('P7', `无法从页面提取有效信息`, true);
+                    resolve(null);
+                }
+            });
+        });
+    } catch (e) {
+        await sendWorkflowLog('P8', `页面备用方案失败: ${e}`, true);
+        return null;
+    }
+}
+
+// 比较状态并发送通知
+async function compareAndNotify(currentStatus, lastStatus) {
+    // 步骤3: 状态比较
+    await sendWorkflowLog('3', '正在比较状态变化...');
+    const [statusChanged, changeDetails] = await checkStatusChanges(currentStatus, lastStatus);
+    
+    if (statusChanged || !lastStatus) {
+        await sendWorkflowLog('3.1', `检测到状态变化: ${changeDetails.join(', ') || '首次运行'}`);
+        
+        // 步骤4: 保存新状态
+        await sendWorkflowLog('4', '正在保存新状态...');
+        saveCurrentStatus(currentStatus);
+        await sendWorkflowLog('4.1', '新状态已保存');
+        
+        // 步骤5: 发送状态变化通知
+        await sendWorkflowLog('5', '正在发送状态变化通知...');
+        
+        // 简化消息生成
+        const title = `${currentStatus.product_name || "华为商品"}状态更新`;
+        const subtitle = changeDetails.length > 0 ? changeDetails[0] : "状态已更新";
+        const message = await formatNotificationMessage(currentStatus, changeDetails);
+        
+        $.msg(title, subtitle, message);
+        await sendWorkflowLog('5.1', '状态变化通知已发送');
+    } else {
+        await sendWorkflowLog('3.2', '商品状态未发生变化');
+    }
+}
+
+// 从API获取商品状态 - 错误处理增强版
 function fetchApiStatus() {
     return new Promise(async (resolve, reject) => {
         await sendWorkflowLog('2-1', `开始API请求: ${apiUrl}`);
@@ -151,25 +224,28 @@ function fetchApiStatus() {
             resolve(null); // 超时时返回null而不是reject，避免中断主流程
         }, 5000);
         
-        // 请求头
+        // 请求头 - 增强版，添加更多模拟真实浏览器的头信息
         const headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-            "Accept-Language": "zh-CN,zh;q=0.9",
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept": "application/json, text/javascript, */*; q=0.01",
             "Referer": $request.url,
-            "Accept": "application/json, text/javascript, */*; q=0.01"
+            "X-Requested-With": "XMLHttpRequest",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive"
         };
         
         const options = {
             url: apiUrl,
             headers: headers,
-            timeout: 5000, // 显式设置请求超时
+            timeout: 5000,
             body: ""
         };
         
         await sendWorkflowLog('2-3', `API请求已发送，等待响应...`);
         
         $.post(options, async (error, response, data) => {
-            clearTimeout(timeout); // 清除超时定时器
+            clearTimeout(timeout);
             
             if (error) {
                 await sendWorkflowLog('2-4', `API请求出错: ${error}`, true);
@@ -178,21 +254,38 @@ function fetchApiStatus() {
             }
             
             try {
-                await sendWorkflowLog('2-5', `API响应状态码: ${response?.status || '未知'}`);
+                await sendWorkflowLog('2-5', `API响应状态码: ${response?.status || '未知'}, 内容类型: ${response?.headers?.["Content-Type"] || '未知'}`);
                 
-                // 检查响应
+                // 首先检查是否返回HTML而非JSON
+                if (data && data.trim().startsWith('<!DOCTYPE html>')) {
+                    await sendWorkflowLog('2-6', `返回了HTML而非JSON，尝试从HTML提取信息`, true);
+                    
+                    // 实现提取HTML信息的备用方案
+                    const productStatus = await extractFromHtml(data);
+                    if (productStatus) {
+                        await sendWorkflowLog('2-7', `成功从HTML提取商品信息: ${productStatus.product_name || '未知商品'}`);
+                        resolve(productStatus);
+                        return;
+                    } else {
+                        await sendWorkflowLog('2-8', `无法从HTML提取有效信息`, true);
+                        resolve(null);
+                        return;
+                    }
+                }
+                
+                // 正常的JSON处理
                 if (!data || response.status !== 200) {
-                    await sendWorkflowLog('2-6', `无效响应: ${response?.status || '未知状态码'}, 内容长度: ${data?.length || 0}`, true);
+                    await sendWorkflowLog('2-9', `无效响应: ${response?.status || '未知状态码'}, 内容长度: ${data?.length || 0}`, true);
                     resolve(null);
                     return;
                 }
                 
-                await sendWorkflowLog('2-7', `API响应数据长度: ${data.length}`);
+                await sendWorkflowLog('2-10', `API响应数据格式正确，长度: ${data.length}`);
                 
                 // 数据解析
                 try {
                     const apiData = JSON.parse(data);
-                    await sendWorkflowLog('2-8', `成功解析JSON响应`);
+                    await sendWorkflowLog('2-11', `成功解析JSON响应`);
                     
                     const productInfo = apiData.skuInfo || {};
                     const timestamp = $.time('MM-dd HH:mm:ss');
@@ -207,19 +300,177 @@ function fetchApiStatus() {
                         "timestamp": timestamp
                     };
                     
-                    await sendWorkflowLog('2-9', `成功提取商品信息: ${productStatus.product_name}`);
+                    await sendWorkflowLog('2-12', `成功提取商品信息: ${productStatus.product_name}`);
                     resolve(productStatus);
                 } catch (parseError) {
                     // JSON解析错误
-                    await sendWorkflowLog('2-10', `JSON解析出错: ${parseError}, 数据前100字符: ${data.substring(0, 100)}`, true);
-                    resolve(null);
+                    await sendWorkflowLog('2-13', `JSON解析出错: ${parseError}, 数据前100字符: ${data.substring(0, 100)}`, true);
+                    
+                    // 尝试备用的产品API
+                    await sendWorkflowLog('2-14', `尝试使用备用API...`);
+                    const backupStatus = await fetchBackupApiStatus();
+                    if (backupStatus) {
+                        resolve(backupStatus);
+                    } else {
+                        resolve(null);
+                    }
                 }
             } catch (e) {
-                await sendWorkflowLog('2-11', `处理API响应时发生异常: ${e}`, true);
+                await sendWorkflowLog('2-15', `处理API响应时发生异常: ${e}`, true);
                 resolve(null);
             }
         });
     });
+}
+
+// 从HTML页面提取商品信息的备用方案
+async function extractFromHtml(htmlContent) {
+    await sendWorkflowLog('2-H1', `开始从HTML提取商品信息...`);
+    
+    try {
+        // 提取页面标题 (通常包含产品名)
+        const titleMatch = htmlContent.match(/<title>(.*?)<\/title>/i);
+        const pageTitle = titleMatch ? titleMatch[1].trim() : '未知产品';
+        await sendWorkflowLog('2-H2', `提取到页面标题: ${pageTitle}`);
+        
+        // 提取按钮状态
+        let buttonMode = '';
+        const buttonPatterns = [
+            /<span[^>]*class="button[^"]*"[^>]*>(.*?)<\/span>/i,
+            /<a[^>]*class="[^"]*button[^"]*"[^>]*>(.*?)<\/a>/i,
+            /<button[^>]*>(.*?)<\/button>/i
+        ];
+        
+        for (const pattern of buttonPatterns) {
+            const buttonMatch = htmlContent.match(pattern);
+            if (buttonMatch) {
+                buttonMode = buttonMatch[1].trim().replace(/<[^>]*>/g, '');
+                await sendWorkflowLog('2-H3', `提取到按钮文本: ${buttonMode}`);
+                break;
+            }
+        }
+        
+        // 提取库存状态
+        let stockStatus = '';
+        const stockPatterns = [
+            /状态["\s:]+(.*?)["<]/i,
+            /库存["\s:]+(.*?)["<]/i,
+            /有货["\s:]+(.*?)["<]/i,
+            /无货/i
+        ];
+        
+        for (const pattern of stockPatterns) {
+            const stockMatch = htmlContent.match(pattern);
+            if (stockMatch) {
+                stockStatus = stockMatch[0].includes('无货') ? '无货' : 
+                              (stockMatch[1] ? stockMatch[1].trim() : '有货');
+                await sendWorkflowLog('2-H4', `提取到库存状态: ${stockStatus}`);
+                break;
+            }
+        }
+        
+        // 如果无法提取详细信息，至少根据某些关键词确定大致状态
+        if (!buttonMode) {
+            if (htmlContent.includes('预约') || htmlContent.includes('预定')) {
+                buttonMode = '预约';
+            } else if (htmlContent.includes('立即购买') || htmlContent.includes('购买')) {
+                buttonMode = '立即购买';
+            } else if (htmlContent.includes('到货通知') || htmlContent.includes('到货提醒')) {
+                buttonMode = '到货通知';
+            } else {
+                buttonMode = '未知状态';
+            }
+            await sendWorkflowLog('2-H5', `通过关键词确定按钮状态: ${buttonMode}`);
+        }
+        
+        if (!stockStatus) {
+            if (htmlContent.includes('有货') || htmlContent.includes('现货')) {
+                stockStatus = '有货';
+            } else if (htmlContent.includes('无货') || htmlContent.includes('售罄')) {
+                stockStatus = '无货';
+            } else {
+                stockStatus = '未知库存';
+            }
+            await sendWorkflowLog('2-H6', `通过关键词确定库存状态: ${stockStatus}`);
+        }
+        
+        return {
+            "source": "html",
+            "product_name": pageTitle,
+            "button_mode": buttonMode,
+            "stock_status": stockStatus,
+            "raw_html_sample": htmlContent.substring(0, 200).replace(/\n/g, ' ') + '...',
+            "timestamp": $.time('MM-dd HH:mm:ss')
+        };
+    } catch (error) {
+        await sendWorkflowLog('2-H7', `从HTML提取信息时出错: ${error}`, true);
+        return null;
+    }
+}
+
+// 备用API方法
+async function fetchBackupApiStatus() {
+    await sendWorkflowLog('2-B1', `尝试备用API...`);
+    
+    // 构建备用API URL - 使用不同端点或参数
+    const backupApiUrl = `https://m.vmall.com/product/comdetail/getSkuInfo.json?prdId=${productId}&t=${new Date().getTime()}`;
+    
+    try {
+        // 备用请求头
+        const headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+            "Accept": "*/*",
+            "Accept-Language": "zh-CN,zh;q=0.9",
+            "Referer": `https://m.vmall.com/product/${productId}.html`
+        };
+        
+        return new Promise((resolve) => {
+            const options = {
+                url: backupApiUrl,
+                headers: headers,
+                timeout: 5000
+            };
+            
+            // 使用GET而不是POST
+            await sendWorkflowLog('2-B2', `备用API请求已发送: ${backupApiUrl}`);
+            
+            $.get(options, async (error, response, data) => {
+                if (error) {
+                    await sendWorkflowLog('2-B3', `备用API请求出错: ${error}`, true);
+                    resolve(null);
+                    return;
+                }
+                
+                try {
+                    if (!data || response.status !== 200) {
+                        await sendWorkflowLog('2-B4', `备用API响应无效`, true);
+                        resolve(null);
+                        return;
+                    }
+                    
+                    // 尝试解析JSON
+                    const backupData = JSON.parse(data);
+                    await sendWorkflowLog('2-B5', `备用API返回数据解析成功`);
+                    
+                    const productInfo = backupData.skuInfo || {};
+                    
+                    resolve({
+                        "source": "backup_api",
+                        "product_name": productInfo.prdName || '未知产品',
+                        "button_mode": productInfo.buttonMode || '',
+                        "stock_status": productInfo.stokStatus || '',
+                        "timestamp": $.time('MM-dd HH:mm:ss')
+                    });
+                } catch (e) {
+                    await sendWorkflowLog('2-B6', `解析备用API响应出错: ${e}`, true);
+                    resolve(null);
+                }
+            });
+        });
+    } catch (e) {
+        await sendWorkflowLog('2-B7', `备用API尝试失败: ${e}`, true);
+        return null;
+    }
 }
 
 // 检查状态变化并生成变化详情 - 工作流增强版
