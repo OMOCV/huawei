@@ -5,7 +5,7 @@
 #!icon=https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/e4/99/37/e4993751-d66a-743e-0987-ccfb8c224f99/AppIcon-0-0-1x_U007emarketing-0-0-0-4-0-0-sRGB-0-0-0-GLES2_U002c0-512MB-85-220-0-0.png/246x0w.webp
 
 [Script]
-华为商品状态监控 = type=http-response,pattern=^https:\/\/m\.vmall\.com\/product\/comdetail\/index\.html\?prdId=\d+,requires-body=0,timeout=15,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
+华为商品状态监控 = type=http-response,pattern=^https:\/\/m\.vmall\.com\/product\/comdetail\/index\.html\?prdId=\d+,requires-body=0,timeout=30,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
 
 [MITM]
 hostname = %APPEND% m.vmall.com
