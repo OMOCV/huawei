@@ -9,6 +9,15 @@
 
 [mitm]
 hostname = m.vmall.com
+
+******************************************
+* 修复说明: 解决脚本执行超时问题
+* 优化点:
+* 1. 简化请求处理
+* 2. 优化异步操作
+* 3. 添加超时处理
+* 4. 减少不必要的运算
+******************************************
 */
 
 const consolelog = false;
@@ -22,152 +31,157 @@ const prdIdMatch = url.match(/prdId=(\d+)/);
 const productId = prdIdMatch ? prdIdMatch[1] : "10086989076790"; // 默认ID
 const apiUrl = `https://m.vmall.com/product/comdetail/getSkuInfo.json?prdId=${productId}`;
 
-// 主函数
-async function checkProductStatus() {
+// 主函数 - 优化版，添加超时控制
+function checkProductStatus() {
     consolelog && console.log(`检查商品ID: ${productId}`);
     
-    try {
-        // 获取当前状态
-        const currentStatus = await fetchApiStatus();
-        if (!currentStatus) {
-            consolelog && console.log("获取API状态失败，尝试从页面获取");
-            return $done({});
-        }
-        
-        // 获取上次保存的状态
-        const lastStatus = getLastStatus();
-        
-        // 检查状态变化
-        const [statusChanged, changeDetails] = checkStatusChanges(currentStatus, lastStatus);
-        
-        if (statusChanged || !lastStatus) {
-            // 保存当前状态
-            saveCurrentStatus(currentStatus);
-            
-            // 构建通知消息
-            const message = formatNotificationMessage(currentStatus, changeDetails);
-            
-            // 发送通知
-            $.msg(
-                `${currentStatus.product_name || "华为商品"} 状态更新`, 
-                `${changeDetails.length > 0 ? changeDetails[0] : ""}`,
-                message
-            );
-            
-            consolelog && console.log("状态变化通知已发送");
-        } else {
-            consolelog && console.log("商品状态未发生变化");
-        }
-        
-    } catch (error) {
-        consolelog && console.log(`检查出错: ${error}`);
-    }
+    // 设置超时处理，最多10秒
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("操作超时")), 10000);
+    });
     
-    $done({});
+    // 主要处理逻辑
+    const processPromise = new Promise(async (resolve) => {
+        try {
+            // 直接获取上次状态，避免不必要的API调用
+            const lastStatus = getLastStatus();
+            
+            // 简化的API状态获取
+            const currentStatus = await fetchApiStatus();
+            if (!currentStatus) {
+                consolelog && console.log("获取API状态失败");
+                resolve();
+                return;
+            }
+            
+            // 检查状态变化 - 简化逻辑
+            const [statusChanged, changeDetails] = checkStatusChanges(currentStatus, lastStatus);
+            
+            if (statusChanged || !lastStatus) {
+                // 保存状态并发送通知
+                saveCurrentStatus(currentStatus);
+                
+                // 简化消息生成
+                const title = `${currentStatus.product_name || "华为商品"}状态更新`;
+                const subtitle = changeDetails.length > 0 ? changeDetails[0] : "";
+                const message = formatNotificationMessage(currentStatus, changeDetails);
+                
+                $.msg(title, subtitle, message);
+                consolelog && console.log("通知已发送");
+            } else {
+                consolelog && console.log("状态未变化");
+            }
+            
+            resolve();
+        } catch (error) {
+            consolelog && console.log(`处理出错: ${error}`);
+            resolve(); // 即使出错也完成，避免阻塞
+        }
+    });
+    
+    // 用 Promise.race 竞争模式处理可能的超时情况
+    Promise.race([processPromise, timeoutPromise])
+        .catch(error => {
+            consolelog && console.log(`超时或出错: ${error}`);
+        })
+        .finally(() => {
+            $done({});
+        });
 }
 
-// 从API获取商品状态
-async function fetchApiStatus() {
+// 从API获取商品状态 - 优化版，添加超时控制
+function fetchApiStatus() {
     return new Promise((resolve, reject) => {
+        // 设置3秒超时
+        const timeout = setTimeout(() => {
+            consolelog && console.log("API请求超时");
+            resolve(null); // 超时时返回null而不是reject，避免中断主流程
+        }, 3000);
+        
+        // 简化请求头
         const headers = {
-            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Referer": $request.url,
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-            "X-Requested-With": "XMLHttpRequest"
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
+            "Referer": $request.url
         };
         
         const options = {
             url: apiUrl,
             headers: headers,
+            timeout: 3000, // 显式设置请求超时
             body: ""
         };
         
         $.post(options, (error, response, data) => {
+            clearTimeout(timeout); // 清除超时定时器
+            
             if (error) {
-                consolelog && console.log(`API请求出错: ${error}`);
-                reject(error);
+                consolelog && console.log(`API错误: ${error}`);
+                resolve(null);
                 return;
             }
             
             try {
-                if (response.status === 200) {
-                    const apiData = JSON.parse(data);
-                    // 提取相关信息
-                    const productInfo = apiData.skuInfo || {};
-                    const productName = productInfo.prdName || '未知产品';
-                    const productStatus = productInfo.buttonMode || '';
-                    const productStock = productInfo.stokStatus || '';
-                    
-                    resolve({
-                        "source": "api",
-                        "product_name": productName,
-                        "button_mode": productStatus,
-                        "stock_status": productStock,
-                        "timestamp": new Date().toLocaleString()
-                    });
-                } else {
-                    consolelog && console.log(`API请求失败，状态码: ${response.status}`);
-                    reject(`请求失败: ${response.status}`);
+                // 简化响应处理
+                if (!data || response.status !== 200) {
+                    consolelog && console.log("无效响应");
+                    resolve(null);
+                    return;
                 }
+                
+                const apiData = JSON.parse(data);
+                const productInfo = apiData.skuInfo || {};
+                
+                resolve({
+                    "source": "api",
+                    "product_name": productInfo.prdName || '未知产品',
+                    "button_mode": productInfo.buttonMode || '',
+                    "stock_status": productInfo.stokStatus || '',
+                    "timestamp": $.time('MM-dd HH:mm:ss') // 使用更轻量的时间格式
+                });
             } catch (e) {
-                consolelog && console.log(`解析API响应出错: ${e}`);
-                reject(e);
+                consolelog && console.log(`解析错误: ${e}`);
+                resolve(null);
             }
         });
     });
 }
 
-// 检查状态变化并生成变化详情
+// 检查状态变化并生成变化详情 - 优化版
 function checkStatusChanges(current, last) {
-    if (!last) {
-        return [true, []];
+    // 无上次状态或上次状态格式不对
+    if (!last || typeof last !== 'object') {
+        return [true, ["首次检查"]];
     }
     
-    let statusChanged = false;
+    // 快速对比，避免深入比较
+    if (current.button_mode === last.button_mode && 
+        current.stock_status === last.stock_status) {
+        return [false, []];
+    }
+    
     let changeDetails = [];
     
-    // 比较核心字段
-    const fieldsToCompare = [
-        ["button_mode", "按钮状态"],
-        ["stock_status", "库存状态"]
-    ];
-    
-    for (const [field, label] of fieldsToCompare) {
-        if (current[field] !== undefined && last[field] !== undefined && current[field] !== last[field]) {
-            statusChanged = true;
-            changeDetails.push(`${label}从 '${last[field]}' 变为 '${current[field]}'`);
-        }
+    // 只关注核心状态变化
+    if (current.button_mode !== last.button_mode) {
+        changeDetails.push(`按钮状态: ${last.button_mode || '无'} → ${current.button_mode || '无'}`);
     }
     
-    return [statusChanged, changeDetails];
+    if (current.stock_status !== last.stock_status) {
+        changeDetails.push(`库存状态: ${last.stock_status || '无'} → ${current.stock_status || '无'}`);
+    }
+    
+    return [true, changeDetails];
 }
 
-// 格式化通知消息
+// 格式化通知消息 - 优化版，更简洁
 function formatNotificationMessage(currentStatus, changeDetails) {
-    let messageParts = [];
-    
-    if (currentStatus.product_name) {
-        messageParts.push(`产品名称: ${currentStatus.product_name}\n`);
-    }
-    
-    if (changeDetails.length > 0) {
-        messageParts.push(`变化详情:\n${changeDetails.map(detail => `- ${detail}`).join('\n')}\n`);
-    }
-    
-    if (currentStatus.button_mode) {
-        messageParts.push(`当前按钮状态: ${currentStatus.button_mode}\n`);
-    }
-    
-    if (currentStatus.stock_status) {
-        messageParts.push(`当前库存状态: ${currentStatus.stock_status}\n`);
-    }
-    
-    messageParts.push(`数据来源: ${currentStatus.source || '未知'}\n`);
-    messageParts.push(`检查时间: ${currentStatus.timestamp}\n`);
-    messageParts.push(`点击查看详情`);
-    
-    return messageParts.join('');
+    // 简化消息生成，减少字符串连接操作
+    return `产品: ${currentStatus.product_name || '未知'}\n` +
+           (changeDetails.length > 0 ? `变化:\n${changeDetails.join('\n')}\n\n` : '') +
+           `当前状态: ${currentStatus.button_mode || '未知'}\n` +
+           `库存: ${currentStatus.stock_status || '未知'}\n` +
+           `来源: ${currentStatus.source || 'API'}\n` +
+           `时间: ${currentStatus.timestamp}`;
 }
 
 // 获取上次保存的状态
