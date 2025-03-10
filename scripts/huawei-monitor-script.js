@@ -6,8 +6,10 @@ const PRODUCT_ID = "10086989076790"; // 华为 Mate 70 Pro+
 const PRODUCT_URL = `https://m.vmall.com/product/comdetail/index.html?prdId=${PRODUCT_ID}`;
 const API_URL = `https://m.vmall.com/product/comdetail/getSkuInfo.json?prdId=${PRODUCT_ID}`;
 const PUSHDEER_KEY = "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV";
-const PUSHDEER_URL = "https://api2.pushdeer.com/message/push";
+// 使用本地推送代替 PushDeer，避免网络请求问题
+// const PUSHDEER_URL = "https://api2.pushdeer.com/message/push";
 const STATUS_KEY = "huawei_monitor_last_status"; // 持久化存储键名
+const MAX_TIMEOUT = 15; // 设置最大超时时间（秒）
 
 // HTTP 请求头
 const HEADERS = {
@@ -59,57 +61,42 @@ async function run() {
   $done(); // 通知 Surge 任务完成
 }
 
-// 发送通知函数 (使用 PushDeer)
+// 发送通知函数 (使用 Surge 内置通知功能)
 async function sendNotification(message) {
   try {
-    const payload = {
-      "pushkey": PUSHDEER_KEY,
-      "text": "华为 Mate 70 Pro+ 预约通知",
-      "desp": message
-    };
+    // 将长消息拆分为标题和内容
+    const lines = message.split('\n\n');
+    const title = "华为 Mate 70 Pro+ 预约状态变化";
+    const subtitle = lines[0] || "";
     
-    const request = {
-      url: PUSHDEER_URL,
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    };
+    // 提取关键信息作为通知内容
+    let body = "";
+    if (lines.length > 2) {
+      // 优先使用变化详情作为通知内容
+      const changeIndex = lines.findIndex(line => line.includes('变化详情:'));
+      if (changeIndex !== -1) {
+        body = lines[changeIndex];
+      } else {
+        // 否则使用按钮状态和库存状态
+        const buttonIndex = lines.findIndex(line => line.includes('当前按钮状态:'));
+        const stockIndex = lines.findIndex(line => line.includes('当前库存状态:'));
+        if (buttonIndex !== -1) body += lines[buttonIndex] + "\n";
+        if (stockIndex !== -1) body += lines[stockIndex];
+      }
+    }
     
-    return new Promise((resolve, reject) => {
-      $httpClient.post(request, (error, response, data) => {
-        if (error) {
-          console.log(`通知发送失败: ${error}`);
-          reject(error);
-          return;
-        }
-        
-        if (response.status === 200) {
-          const responseData = JSON.parse(data);
-          if (responseData.code === 0) {
-            console.log(`通知发送成功: ${message}`);
-            
-            // 同时发送 Surge 通知
-            $notification.post(
-              "华为 Mate 70 Pro+ 预约状态变化", 
-              "", 
-              "状态已变化，详细信息已通过 PushDeer 发送"
-            );
-            
-            resolve(true);
-          } else {
-            console.log(`通知失败，PushDeer 返回: ${data}`);
-            reject(new Error(`PushDeer 返回错误: ${responseData.message || "未知错误"}`));
-          }
-        } else {
-          console.log(`通知发送失败。HTTP 状态码: ${response.status}`);
-          reject(new Error(`HTTP 状态码错误: ${response.status}`));
-        }
-      });
-    });
+    // 使用 Surge 的通知系统
+    $notification.post(title, subtitle, body || "状态已变化，请查看详情");
+    console.log(`通知已发送: ${title} - ${subtitle}`);
+    
+    // 保存完整消息到持久化存储，以便后续查看
+    $persistentStore.write(message, "huawei_monitor_last_message");
+    
+    return true;
   } catch (error) {
     console.log(`发送通知时出错: ${error}`);
-    throw error;
+    // 即使出错也不抛出异常，避免中断脚本执行
+    return false;
   }
 }
 
@@ -140,7 +127,8 @@ async function fetchApiStatus() {
   try {
     const request = {
       url: API_URL,
-      headers: HEADERS
+      headers: HEADERS,
+      timeout: MAX_TIMEOUT * 1000 // 设置超时时间（毫秒）
     };
     
     return new Promise((resolve, reject) => {
@@ -153,6 +141,13 @@ async function fetchApiStatus() {
         
         if (response.status === 200) {
           try {
+            // 检查响应内容是否为JSON格式
+            if (data.includes('<') || data.includes('>')) {
+              console.log(`API返回HTML内容而非JSON，跳过解析`);
+              resolve(null);
+              return;
+            }
+            
             const apiData = JSON.parse(data);
             const productInfo = apiData.skuInfo || {};
             const productName = productInfo.prdName || '未知产品';
@@ -267,7 +262,8 @@ async function fetchPageStatus() {
   try {
     const request = {
       url: PRODUCT_URL,
-      headers: HEADERS
+      headers: HEADERS,
+      timeout: MAX_TIMEOUT * 1000 // 设置超时时间（毫秒）
     };
     
     return new Promise((resolve, reject) => {
@@ -279,16 +275,28 @@ async function fetchPageStatus() {
         }
         
         if (response.status === 200) {
-          // 首先尝试从页面中提取JSON
-          const jsonStatus = extractJsonFromPage(data);
-          if (jsonStatus) {
-            resolve(jsonStatus);
+          // 检查是否获取到数据
+          if (!data || data.length < 100) {
+            console.log("页面内容异常，数据长度不足");
+            resolve(null);
             return;
           }
           
-          // 如果JSON提取失败，使用HTML解析
-          const htmlStatus = parsePageWithHtml(data);
-          resolve(htmlStatus);
+          try {
+            // 首先尝试从页面中提取JSON
+            const jsonStatus = extractJsonFromPage(data);
+            if (jsonStatus) {
+              resolve(jsonStatus);
+              return;
+            }
+            
+            // 如果JSON提取失败，使用HTML解析
+            const htmlStatus = parsePageWithHtml(data);
+            resolve(htmlStatus);
+          } catch (e) {
+            console.log(`解析页面内容时出错: ${e}`);
+            resolve(null);
+          }
         } else {
           console.log(`页面请求失败，状态码: ${response.status}`);
           resolve(null);
@@ -425,5 +433,15 @@ function formatNotificationMessage(currentStatus, changeDetails) {
   return messageParts.join('');
 }
 
-// 运行主函数
-run();
+// 设置统一的超时处理
+const timeoutPromise = new Promise((_, reject) => {
+  setTimeout(() => reject(new Error("任务执行超时")), MAX_TIMEOUT * 1000);
+});
+
+// 带超时保护的运行主函数
+Promise.race([run(), timeoutPromise])
+  .catch(error => {
+    console.log(`脚本执行错误: ${error}`);
+    $notification.post("华为 Mate 70 Pro+ 监控", "脚本执行错误", error.message);
+    $done();
+  });
