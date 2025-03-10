@@ -3,7 +3,7 @@
   "name": "华为商品监控",
   "author": "@OMOCV",
   "icon": "https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Huawei.png",
-  "repo": "https://github.com/OMOCV/huawei",
+  "repo": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
   "apps": [
     {
       "id": "huaweiMonitor",
@@ -23,15 +23,15 @@
           "id": "huawei_push_key",
           "name": "PushDeer Key",
           "type": "text",
-          "placeholder": "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV",
+          "placeholder": "",
           "desc": "用于发送通知的PushDeer Key"
         },
         {
           "id": "huawei_check_interval",
           "name": "检查间隔(分钟)",
           "type": "number",
-          "placeholder": "30",
-          "desc": "自定义检查间隔，默认30分钟"
+          "placeholder": "5",
+          "desc": "自定义检查间隔，默认 5 分钟"
         },
         {
           "id": "huawei_enable_workflow_log",
@@ -41,7 +41,7 @@
         }
       ],
       "author": "@OMOCV",
-      "repo": "https://github.com/OMOCV/huawei",
+      "repo": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
       "icons": ["https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Huawei_1.png", "https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Huawei.png"]
     }
   ]
