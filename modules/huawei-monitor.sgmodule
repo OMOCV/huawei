@@ -1,11 +1,6 @@
-# 华为商品监控 - Surge/Shadowrocket配置
-
 [Script]
 # 定时任务 - 每5分钟执行一次
 华为商品监控 = type=cron,cronexp="*/5 * * * *",script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js,timeout=30,wake-system=1
-
-# 可选：URL重写，使通知中的链接可以直接跳转
-华为商城链接 = type=http-request,pattern=^https://m\.vmall\.com/product/comdetail/index\.html,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js,requires-body=0
 
 [MITM]
 hostname = %APPEND% m.vmall.com
