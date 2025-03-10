@@ -1,8 +1,11 @@
-#!name=华为商城监控 (简化版)
-#!desc=监控华为 Mate 70 Pro+ 预约/库存状态变化
+#!name=华为商品状态监控
+#!desc=监控华为商城商品(如Mate系列)的预约/开售状态
+#!author=by@OMOCV
+#!homepage=https://github.com/OMOCV/huawei/
+#!icon=https://is1-ssl.mzstatic.com/image/thumb/Purple116/v4/e4/99/37/e4993751-d66a-743e-0987-ccfb8c224f99/AppIcon-0-0-1x_U007emarketing-0-0-0-4-0-0-sRGB-0-0-0-GLES2_U002c0-512MB-85-220-0-0.png/246x0w.webp
 
 [Script]
-华为 Mate 70 Pro+ 监控 = type=cron,cronexp="*/5 * * * *",wake-system=1,timeout=20,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
+华为商品状态监控 = type=http-response,pattern=^https:\/\/m\.vmall\.com\/product\/comdetail\/index\.html\?prdId=\d+,requires-body=0,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
 
 [MITM]
 hostname = %APPEND% m.vmall.com
