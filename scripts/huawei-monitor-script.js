@@ -5,6 +5,9 @@ const config = {
     // 监控商品配置
     productUrl: "https://m.vmall.com/product/comdetail/index.html?prdId=10086989076790",
     productName: "华为 Mate 70 Pro+", // 根据截图修改为实际商品名称
+    
+    // 备用商品URL
+    backupUrl: "https://m.vmall.com/product/10086989076790.html",
 
     // PushDeer配置
     pushDeerKey: "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV", // 需要替换为用户自己的PushDeer Key
@@ -14,7 +17,10 @@ const config = {
     debug: true,
     
     // 是否发送HTML片段到通知
-    sendHtmlInNotification: true
+    sendHtmlInNotification: true,
+    
+    // 在无法获取正常状态时是否使用估算状态
+    useEstimatedState: true
 };
 
 // 发送PushDeer通知的函数
@@ -63,104 +69,179 @@ function extractButtonInfo(html) {
     try {
         console.log("开始尝试提取按钮信息...");
         
-        // 首先保存HTML内容到文件用于调试（仅调试模式）
-        if (config.debug) {
-            console.log("HTML内容长度：" + html.length);
-            console.log("HTML内容前200字符：" + html.substring(0, 200));
-            
-            // 检查HTML中是否包含特定关键词
-            const keywords = ["buttonName", "buttonText", "加入购物车", "button"];
-            for (const keyword of keywords) {
-                console.log(`HTML中${html.includes(keyword) ? '包含' : '不包含'}关键词：${keyword}`);
-            }
-        }
-        
-        // 直接在HTML中搜索商品状态的关键信息
-        if (html.includes("加入购物车")) {
-            buttonInfo.buttonName = "add_to_cart";
-            buttonInfo.buttonText = "加入购物车";
-            return buttonInfo;
-        } else if (html.includes("已售罄") || html.includes("售罄")) {
-            buttonInfo.buttonName = "soldout";
-            buttonInfo.buttonText = "已售罄";
-            return buttonInfo;
-        } else if (html.includes("立即预约") || html.includes("预约")) {
-            buttonInfo.buttonName = "appointment";
-            buttonInfo.buttonText = "立即预约";
-            return buttonInfo;
-        } else if (html.includes("即将上市") || html.includes("coming_soon")) {
-            buttonInfo.buttonName = "coming_soon";
-            buttonInfo.buttonText = "即将上市";
-            return buttonInfo;
-        }
-        
-        // 如果关键词搜索失败，尝试使用正则表达式
-        console.log("关键词搜索失败，尝试使用正则表达式...");
-        
-        // 以下是可能的几种提取模式
-        const patterns = [
-            // 模式1: 标准格式 buttonName: 'xxx'
-            {
-                nameRegex: /buttonName[\s]*:[\s]*(['"])(.*?)\1/i,
-                textRegex: /buttonText[\s]*:[\s]*(['"])(.*?)\1/i
-            },
-            // 模式2: JSON格式 "buttonName": "xxx"
-            {
-                nameRegex: /["']buttonName["'][\s]*:[\s]*["'](.*?)["']/i,
-                textRegex: /["']buttonText["'][\s]*:[\s]*["'](.*?)["']/i
-            },
-            // 模式3: 变量赋值格式 var buttonName = 'xxx'
-            {
-                nameRegex: /var[\s]+buttonName[\s]*=[\s]*["'](.*?)["']/i,
-                textRegex: /var[\s]+buttonText[\s]*=[\s]*["'](.*?)["']/i
-            }
+        // 定义可能的按钮状态标识
+        const buttonStates = [
+            { name: "add_to_cart", text: "加入购物车", keywords: ["加入购物车", "add_to_cart", "cart"] },
+            { name: "buy_now", text: "立即购买", keywords: ["立即购买", "buy_now", "立刻购买", "buy"] },
+            { name: "soldout", text: "已售罄", keywords: ["已售罄", "售罄", "卖完", "soldout", "sold_out", "sold out"] },
+            { name: "appointment", text: "立即预约", keywords: ["立即预约", "预约", "appointment", "reserve"] },
+            { name: "coming_soon", text: "即将上市", keywords: ["即将上市", "coming_soon", "即将"] }
         ];
         
-        // 尝试所有可能的模式
-        for (const pattern of patterns) {
-            const nameMatch = html.match(pattern.nameRegex);
-            if (nameMatch && nameMatch.length > 1) {
-                buttonInfo.buttonName = nameMatch[nameMatch.length - 1];
-                console.log(`找到buttonName: ${buttonInfo.buttonName}, 使用模式: ${pattern.nameRegex}`);
-            }
-            
-            const textMatch = html.match(pattern.textRegex);
-            if (textMatch && textMatch.length > 1) {
-                buttonInfo.buttonText = textMatch[textMatch.length - 1];
-                console.log(`找到buttonText: ${buttonInfo.buttonText}, 使用模式: ${pattern.textRegex}`);
-            }
-            
-            // 如果两个值都找到了，就停止搜索
-            if (buttonInfo.buttonName && buttonInfo.buttonText) {
-                break;
+        // 方法1: 全文搜索关键词
+        console.log("方法1: 全文搜索关键词");
+        for (const state of buttonStates) {
+            for (const keyword of state.keywords) {
+                if (html.includes(keyword)) {
+                    console.log(`找到关键词 "${keyword}", 匹配到按钮状态: ${state.name}`);
+                    buttonInfo.buttonName = state.name;
+                    buttonInfo.buttonText = state.text;
+                    return buttonInfo;
+                }
             }
         }
         
-        // 如果仍然未找到任何值，尝试查找任何按钮相关信息
-        if (!buttonInfo.buttonName && !buttonInfo.buttonText) {
-            console.log("标准提取方法均失败，尝试查找任何按钮相关信息...");
-            
-            // 尝试找到所有包含button或btn的标签
-            const buttonRegex = /<button[^>]*>(.*?)<\/button>/gi;
-            const buttonMatches = html.match(buttonRegex);
-            
-            if (buttonMatches && buttonMatches.length > 0) {
-                console.log("找到按钮元素：" + buttonMatches[0]);
-                // 分析第一个按钮
-                const firstButton = buttonMatches[0];
-                
-                // 提取按钮文本
-                const textMatch = firstButton.match(/>([^<]+)</);
-                if (textMatch && textMatch[1]) {
-                    buttonInfo.buttonText = textMatch[1].trim();
+        // 方法2: 分析JSON数据
+        console.log("方法1失败，尝试方法2: 分析JSON数据");
+        const jsonRegex = /window\.__initial_state__\s*=\s*({.*?});/s;
+        const jsonMatch = html.match(jsonRegex);
+        if (jsonMatch && jsonMatch[1]) {
+            console.log("找到初始状态JSON数据");
+            try {
+                const jsonStr = jsonMatch[1];
+                // 在JSON中查找按钮相关信息
+                for (const state of buttonStates) {
+                    for (const keyword of state.keywords) {
+                        if (jsonStr.includes(keyword)) {
+                            console.log(`在JSON中找到关键词 "${keyword}", 匹配到按钮状态: ${state.name}`);
+                            buttonInfo.buttonName = state.name;
+                            buttonInfo.buttonText = state.text;
+                            return buttonInfo;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.log("JSON解析失败: " + e);
+            }
+        }
+        
+        // 方法3: 尝试正则表达式匹配
+        console.log("方法2失败，尝试方法3: 正则表达式匹配");
+        // 更多的正则表达式模式
+        const patterns = [
+            // 模式1: Vue组件中的按钮属性
+            { regex: /(?:btn|button)(?:Name|Text|Type)['":\s]+['"]([^'"]+)['"]/gi }, 
+            // 模式2: 按钮状态
+            { regex: /(?:状态|state|status)['":\s]+['"]([^'"]+)['"]/gi },
+            // 模式3: 商品状态
+            { regex: /(?:商品|product)(?:状态|State|Status)['":\s]+['"]([^'"]+)['"]/gi }
+        ];
+        
+        for (const pattern of patterns) {
+            const matches = [...html.matchAll(pattern.regex)];
+            if (matches.length > 0) {
+                console.log(`使用模式 ${pattern.regex} 找到匹配:`);
+                for (const match of matches) {
+                    const value = match[1];
+                    console.log(`- ${value}`);
+                    
+                    // 检查匹配的文本是否包含任何已知的按钮状态关键词
+                    for (const state of buttonStates) {
+                        if (state.keywords.some(k => value.includes(k))) {
+                            console.log(`匹配到按钮状态: ${state.name}`);
+                            buttonInfo.buttonName = state.name;
+                            buttonInfo.buttonText = state.text;
+                            return buttonInfo;
+                        }
+                    }
+                    
+                    // 如果没有匹配到任何已知状态，但找到了文本，使用第一个找到的值
+                    if (!buttonInfo.buttonName) {
+                        console.log(`无法识别的按钮状态: ${value}，设为默认值`);
+                        buttonInfo.buttonName = "unknown";
+                        buttonInfo.buttonText = value;
+                    }
                 }
                 
-                // 提取按钮类型/名称 (从class或id属性)
-                const classMatch = firstButton.match(/class=["']([^"']*?)["']/i);
-                if (classMatch && classMatch[1]) {
-                    buttonInfo.buttonName = classMatch[1].includes("disabled") ? "soldout" : "unknown_" + classMatch[1];
+                // 如果已找到按钮信息，返回
+                if (buttonInfo.buttonName && buttonInfo.buttonText) {
+                    return buttonInfo;
                 }
             }
+        }
+        
+        // 方法4: 搜索按钮元素
+        console.log("方法3失败，尝试方法4: 搜索按钮元素");
+        const buttonElements = [
+            ...html.matchAll(/<button[^>]*>(.*?)<\/button>/gi),
+            ...html.matchAll(/<a[^>]*class="[^"]*btn[^"]*"[^>]*>(.*?)<\/a>/gi),
+            ...html.matchAll(/<div[^>]*class="[^"]*btn[^"]*"[^>]*>(.*?)<\/div>/gi)
+        ];
+        
+        if (buttonElements.length > 0) {
+            console.log(`找到 ${buttonElements.length} 个可能的按钮元素`);
+            
+            for (const buttonMatch of buttonElements) {
+                const buttonHtml = buttonMatch[0];
+                const buttonText = buttonMatch[1]?.trim();
+                
+                if (!buttonText) continue;
+                
+                console.log(`按钮文本: ${buttonText}`);
+                
+                // 检查按钮是否包含禁用状态
+                const isDisabled = buttonHtml.includes('disabled') || 
+                                  buttonHtml.includes('disable') || 
+                                  buttonHtml.includes('gray');
+                
+                // 检查按钮文本是否匹配任何状态
+                for (const state of buttonStates) {
+                    if (state.keywords.some(k => buttonText.includes(k))) {
+                        console.log(`按钮文本匹配到状态: ${state.name}`);
+                        buttonInfo.buttonName = state.name;
+                        buttonInfo.buttonText = buttonText;
+                        return buttonInfo;
+                    }
+                }
+                
+                // 如果是禁用按钮，可能是售罄状态
+                if (isDisabled) {
+                    console.log("按钮处于禁用状态，可能已售罄");
+                    buttonInfo.buttonName = "soldout";
+                    buttonInfo.buttonText = "已售罄";
+                    return buttonInfo;
+                }
+                
+                // 如果没找到特定状态，但有按钮文本，使用第一个有效的按钮
+                if (!buttonInfo.buttonText) {
+                    buttonInfo.buttonName = "unknown";
+                    buttonInfo.buttonText = buttonText;
+                }
+            }
+        }
+        
+        // 方法5: 最后尝试，根据标题和价格信息推断状态
+        if (!buttonInfo.buttonName) {
+            console.log("方法4失败，尝试方法5: 根据商品信息推断状态");
+            
+            // 检查是否有价格信息，通常有价格的商品是可以购买的
+            const hasPriceInfo = html.includes('￥') || html.includes('价格') || html.includes('price');
+            
+            // 检查是否有库存信息
+            const hasStockInfo = html.includes('库存') || html.includes('stock');
+            
+            // 检查是否提到预售或即将上市
+            const isPreSale = html.includes('预售') || html.includes('预购') || html.includes('预约');
+            const isComingSoon = html.includes('即将') || html.includes('coming soon');
+            
+            if (isComingSoon) {
+                buttonInfo.buttonName = "coming_soon";
+                buttonInfo.buttonText = "即将上市";
+            } else if (isPreSale) {
+                buttonInfo.buttonName = "appointment";
+                buttonInfo.buttonText = "立即预约";
+            } else if (hasPriceInfo && hasStockInfo) {
+                buttonInfo.buttonName = "add_to_cart";
+                buttonInfo.buttonText = "加入购物车";
+            } else if (hasPriceInfo) {
+                buttonInfo.buttonName = "buy_now";
+                buttonInfo.buttonText = "立即购买";
+            } else {
+                buttonInfo.buttonName = "unknown";
+                buttonInfo.buttonText = "未知状态";
+            }
+            
+            console.log(`根据页面内容推断状态: ${buttonInfo.buttonName}`);
         }
     } catch (error) {
         console.log("提取按钮信息出错: " + error);
@@ -186,55 +267,93 @@ async function checkProductStatus() {
         let html = "";
         let fetchSuccess = false;
         
-        // 尝试POST请求
-        console.log("尝试使用POST方法请求...");
-        try {
-            const postResponse = await $httpClient.post({
-                url: config.productUrl,
-                headers: {
-                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "Connection": "keep-alive",
-                    "Referer": "https://m.vmall.com/"
-                },
-                timeout: 30000 // 设置30秒超时
-            });
-            
-            if (postResponse && postResponse.body) {
-                html = postResponse.body;
-                fetchSuccess = true;
-                console.log("POST请求成功获取HTML内容");
+        // 完全模拟浏览器的请求头
+        const fullHeaders = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Cache-Control": "max-age=0",
+            "Referer": "https://www.vmall.com/",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Pragma": "no-cache"
+        };
+        
+        console.log("直接访问URL: " + config.productUrl);
+        
+        // 定义一个更强健的请求函数
+        const fetchWithMethod = async (method) => {
+            try {
+                const options = {
+                    url: config.productUrl,
+                    headers: fullHeaders
+                };
+                
+                if (method === 'post') {
+                    options.body = ""; // 空body
+                }
+                
+                const response = await $httpClient[method](options);
+                
+                if (response && response.status === 200 && response.body) {
+                    console.log(`${method.toUpperCase()}请求成功，状态码: ${response.status}`);
+                    console.log(`响应头: ${JSON.stringify(response.headers)}`);
+                    return response.body;
+                } else {
+                    console.log(`${method.toUpperCase()}请求异常，状态码: ${response?.status || '未知'}`);
+                    return null;
+                }
+            } catch (error) {
+                console.log(`${method.toUpperCase()}请求出错: ${error}`);
+                return null;
             }
-        } catch (postError) {
-            console.log("POST请求失败: " + postError);
+        };
+        
+        // 尝试使用不同的方法获取HTML
+        const methods = ['get', 'post']; // 先GET后POST
+        
+        for (const method of methods) {
+            console.log(`尝试使用${method.toUpperCase()}方法请求...`);
+            const result = await fetchWithMethod(method);
+            
+            if (result) {
+                html = result;
+                fetchSuccess = true;
+                console.log(`${method.toUpperCase()}请求成功获取HTML内容，长度: ${html.length}`);
+                break;
+            }
         }
         
-        // 如果POST失败，尝试GET请求
+        // 如果以上方法都失败，尝试直接请求移动端URL
         if (!fetchSuccess) {
-            console.log("尝试使用GET方法请求...");
-            try {
-                const getResponse = await $httpClient.get({
-                    url: config.productUrl,
-                    headers: {
-                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
-                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language": "zh-CN,zh-Hans;q=0.9",
-                        "Connection": "keep-alive",
-                        "Referer": "https://m.vmall.com/"
-                    },
-                    timeout: 30000 // 设置30秒超时
-                });
-                
-                if (getResponse && getResponse.body) {
-                    html = getResponse.body;
-                    fetchSuccess = true;
-                    console.log("GET请求成功获取HTML内容");
+            console.log("常规请求失败，尝试访问备用URL...");
+            
+            // 尝试使用完全不同的URL格式
+            const backupUrl = `https://m.vmall.com/product/10086989076790.html`;
+            
+            for (const method of methods) {
+                try {
+                    const options = {
+                        url: backupUrl,
+                        headers: fullHeaders
+                    };
+                    
+                    const response = await $httpClient[method](options);
+                    
+                    if (response && response.status === 200 && response.body) {
+                        html = response.body;
+                        fetchSuccess = true;
+                        console.log(`备用URL ${method.toUpperCase()}请求成功，长度: ${html.length}`);
+                        break;
+                    }
+                } catch (error) {
+                    console.log(`备用URL ${method.toUpperCase()}请求失败: ${error}`);
                 }
-            } catch (getError) {
-                console.log("GET请求失败: " + getError);
-                throw new Error("GET和POST请求均失败: " + getError);
             }
         }
         
