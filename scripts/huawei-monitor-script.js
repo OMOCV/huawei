@@ -143,14 +143,8 @@ async function checkProductStatus() {
     // 判断是否首次运行
     const isFirstRun = $persistentStore.read("vmall_isFirstRun") === null;
     
-    // 记录开始时间
-    const startTime = new Date().toLocaleString("zh-CN");
-    
-    // 发送工作流开始通知
-    await sendPushDeerNotification(
-        "🔍 商品监控运行",
-        `**监控开始**\n- 商品：${config.productName}\n- 时间：${startTime}\n- 状态：开始检查\n- 链接：${config.productUrl}`
-    );
+    // 开始检查的状态通知，在获取按钮信息后再发送
+    let startMessage = `**监控开始**\n- 商品：${config.productName}\n- 时间：${new Date().toLocaleString("zh-CN")}\n- 状态：开始检查\n- 链接：${config.productUrl}\n`;
     
     try {
         let response;
@@ -192,47 +186,43 @@ async function checkProductStatus() {
             }
         }
         
-        // 调试模式：输出HTML片段以便分析
-        if (config.debug) {
-            console.log("HTML片段预览（前1000字符）:");
-            console.log(html.substring(0, 1000));
-            
-            // 输出到通知
-            await sendPushDeerNotification(
-                "🔍 HTML调试信息",
-                `**HTML片段预览**\n\`\`\`\n${html.substring(0, 300)}\n...\n\`\`\``
-            );
-        }
-        
         // 提取按钮信息
         const currentInfo = extractButtonInfo(html);
         console.log(`当前状态 - buttonName: ${currentInfo.buttonName}, buttonText: ${currentInfo.buttonText}`);
         
-        // 立即通知当前提取到的值（无论是否提取成功）
-        const extractionStatus = `**当前提取结果**\n- 成功获取HTML: ${fetchSuccess ? '✅' : '❌'}\n- 提取到的buttonName: ${currentInfo.buttonName || "未提取到"}\n- 提取到的buttonText: ${currentInfo.buttonText || "未提取到"}\n- 提取时间: ${new Date().toLocaleString("zh-CN")}`;
+        // 将按钮信息添加到开始通知中
+        startMessage += `- 按钮名称: ${currentInfo.buttonName || "未提取到"}\n- 按钮文本: ${currentInfo.buttonText || "未提取到"}`;
         
+        // 发送更新后的通知
         await sendPushDeerNotification(
-            "🔄 商品监控提取结果",
-            extractionStatus
+            "🔍 商品监控运行",
+            startMessage
+        );
+        
+        // 在Surge通知中也显示按钮状态
+        $notification.post(
+            "📢 商品监控运行",
+            `${config.productName}`,
+            `状态: 开始检查\n按钮名称: ${currentInfo.buttonName || "未提取到"}\n按钮文本: ${currentInfo.buttonText || "未提取到"}\n时间: ${new Date().toLocaleString("zh-CN")}`,
+            { url: config.productUrl }
         );
         
         // 如果提取失败，发送警告
         if (!currentInfo.buttonName && !currentInfo.buttonText) {
-            await sendPushDeerNotification(
-                "⚠️ 商品监控警告",
-                `**提取失败**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- HTML获取: ${fetchSuccess ? "成功" : "失败"}\n- 可能网页结构已变化，请检查脚本\n\n**HTML片段**\n\`\`\`\n${html.substring(0, 200)}...\n\`\`\``
-            );
+            const warningMsg = `**提取警告**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- HTML获取: ${fetchSuccess ? "成功" : "失败"}\n- 可能网页结构已变化，请检查脚本`;
             
-            // 即使提取失败也发送弹窗通知
-            $notification.post(
-                "⚠️ 商品监控提取失败",
-                `${config.productName}: 无法提取按钮信息`,
-                `请检查脚本或网页结构是否变化\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
-                { url: config.productUrl }
-            );
+            // 在调试模式下添加HTML片段
+            if (config.debug && config.sendHtmlInNotification) {
+                warningMsg += `\n\n**HTML片段**\n\`\`\`\n${html.substring(0, 200)}...\n\`\`\``;
+            }
             
-            $done();
-            return;
+            await sendPushDeerNotification("⚠️ 商品监控警告", warningMsg);
+            
+            // 即使提取失败也更新状态中的按钮信息为"未能提取"
+            // 不需要额外操作，因为已经在startMessage中添加了这些信息
+            
+            // 由于已经发送了按钮状态，不需要在这里停止脚本
+            // 继续执行，尝试对比之前的状态
         }
         
         // 从持久化存储中获取上一次的值
@@ -310,27 +300,21 @@ async function checkProductStatus() {
             );
         }
         
-        // 即使状态没有变化，也立即发送当前状态弹窗通知
-        $notification.post(
-            "📢 商品当前状态",
-            `${config.productName}`,
-            `按钮名称: ${currentInfo.buttonName || "未知"}\n按钮文本: ${currentInfo.buttonText || "未知"}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
-            {
-                url: config.productUrl
-            }
-        );
-        
-        // 完成脚本执行
-        $done();
-        
     } catch (error) {
         // 发送错误通知
         const errorMessage = `**监控错误**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- 错误详情：${error}`;
         await sendPushDeerNotification("❌ 商品监控出错", errorMessage);
         console.log("脚本执行出错：" + error);
-        $notification.post("商品监控出错", "", error);
-        $done();
+        
+        $notification.post(
+            "❌ 商品监控出错",
+            `${config.productName}`,
+            `错误: ${error}\n时间: ${new Date().toLocaleString("zh-CN")}`,
+            { url: config.productUrl }
+        );
     }
+    
+    $done();
 }
 
 // 执行主函数
