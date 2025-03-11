@@ -16,7 +16,7 @@ const config = {
 
 // 发送PushDeer通知的函数
 async function sendPushDeerNotification(title, content) {
-    if (!config.pushDeerKey || config.pushDeerKey === "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV") {
+    if (!config.pushDeerKey || config.pushDeerKey === "YOUR_PUSHDEER_KEY") {
         console.log("请先配置PushDeer Key");
         $notification.post("配置错误", "PushDeer Key未配置", "请在脚本中配置您的PushDeer Key");
         $done();
