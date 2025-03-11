@@ -54,7 +54,7 @@ async function sendPushDeerNotification(title, content) {
     }
 }
 
-// 提取按钮信息 - 简化版
+// 提取按钮信息 - 专为华为商城JSON结构设计
 function extractButtonInfo(html) {
     const buttonInfo = {
         buttonName: "",
@@ -67,83 +67,76 @@ function extractButtonInfo(html) {
     }
     
     try {
-        console.log("使用简化逻辑提取按钮信息...");
+        console.log("使用针对华为商城的JSON提取逻辑...");
         
-        // 在调试模式下记录HTML片段
-        if (config.debug) {
-            // 记录HTML长度
-            console.log(`HTML内容长度: ${html.length}`);
+        // 1. 尝试提取NEXT_DATA脚本内容
+        const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+        if (nextDataMatch && nextDataMatch[1]) {
+            console.log("找到NEXT_DATA脚本内容");
+            const jsonContent = nextDataMatch[1];
             
-            // 尝试搜索具体的按钮信息模式
-            const simplePatterns = [
-                /"buttonName"\s*:\s*"([^"]+)"/,
-                /"buttonText"\s*:\s*"([^"]+)"/,
-                /buttonName\s*:\s*'([^']+)'/,
-                /buttonText\s*:\s*'([^']+)'/,
-                /buttonName\s*:\s*"([^"]+)"/,
-                /buttonText\s*:\s*"([^"]+)"/
-            ];
+            // 2. 直接提取buttonName和buttonText
+            const buttonNameMatch = jsonContent.match(/"buttonName"\s*:\s*"([^"]+)"/);
+            const buttonTextMatch = jsonContent.match(/"buttonText"\s*:\s*"([^"]+)"/);
             
-            for (const pattern of simplePatterns) {
-                const match = html.match(pattern);
-                if (match && match[1]) {
-                    console.log(`找到匹配: ${pattern} -> ${match[1]}`);
-                }
+            if (buttonNameMatch && buttonNameMatch[1]) {
+                buttonInfo.buttonName = buttonNameMatch[1];
+                console.log(`从JSON中提取到buttonName: ${buttonInfo.buttonName}`);
             }
             
-            // 搜索所有包含button的行，帮助分析
-            console.log("所有包含'button'的行:");
-            const lines = html.split("\n");
-            lines.forEach((line, i) => {
-                if (line.toLowerCase().includes("button")) {
-                    console.log(`行 ${i+1}: ${line.trim()}`);
-                }
-            });
+            if (buttonTextMatch && buttonTextMatch[1]) {
+                buttonInfo.buttonText = buttonTextMatch[1];
+                console.log(`从JSON中提取到buttonText: ${buttonInfo.buttonText}`);
+            }
+            
+            // 如果找到了其中任何一个值，就认为提取成功
+            if (buttonInfo.buttonName || buttonInfo.buttonText) {
+                return buttonInfo;
+            }
+        } else {
+            console.log("未找到NEXT_DATA脚本内容");
         }
         
-        // 尝试寻找buttonName和buttonText
-        const nameMatch = html.match(/['"](buttonName)['"]?\s*:\s*['"]([^'"]+)['"]/i) || 
-                          html.match(/buttonName\s*[:=]\s*['"]([^'"]+)['"]/i);
-                          
-        const textMatch = html.match(/['"](buttonText)['"]?\s*:\s*['"]([^'"]+)['"]/i) || 
-                          html.match(/buttonText\s*[:=]\s*['"]([^'"]+)['"]/i);
+        // 备用方法：直接在整个HTML中搜索
+        console.log("尝试在整个HTML中搜索...");
+        const directButtonNameMatch = html.match(/"buttonName"\s*:\s*"([^"]+)"/);
+        const directButtonTextMatch = html.match(/"buttonText"\s*:\s*"([^"]+)"/);
         
-        if (nameMatch) {
-            buttonInfo.buttonName = nameMatch[2] || nameMatch[1];
-            console.log(`找到buttonName: ${buttonInfo.buttonName}`);
+        if (directButtonNameMatch && directButtonNameMatch[1]) {
+            buttonInfo.buttonName = directButtonNameMatch[1];
+            console.log(`直接从HTML中提取到buttonName: ${buttonInfo.buttonName}`);
         }
         
-        if (textMatch) {
-            buttonInfo.buttonText = textMatch[2] || textMatch[1];
-            console.log(`找到buttonText: ${buttonInfo.buttonText}`);
+        if (directButtonTextMatch && directButtonTextMatch[1]) {
+            buttonInfo.buttonText = directButtonTextMatch[1];
+            console.log(`直接从HTML中提取到buttonText: ${buttonInfo.buttonText}`);
         }
         
-        // 如果未找到名称或文本，尝试识别常见状态
-        if (!buttonInfo.buttonName || !buttonInfo.buttonText) {
-            // 直接搜索常见状态词
+        // 如果仍然没有找到，尝试识别常见状态
+        if (!buttonInfo.buttonName && !buttonInfo.buttonText) {
+            console.log("尝试识别常见状态...");
             if (html.includes("加入购物车")) {
-                buttonInfo.buttonName = buttonInfo.buttonName || "add_to_cart";
-                buttonInfo.buttonText = buttonInfo.buttonText || "加入购物车";
+                buttonInfo.buttonName = "add_to_cart";
+                buttonInfo.buttonText = "加入购物车";
             } else if (html.includes("立即购买")) {
-                buttonInfo.buttonName = buttonInfo.buttonName || "buy_now";
-                buttonInfo.buttonText = buttonInfo.buttonText || "立即购买";
+                buttonInfo.buttonName = "buy_now";
+                buttonInfo.buttonText = "立即购买";
             } else if (html.includes("已售罄") || html.includes("售罄")) {
-                buttonInfo.buttonName = buttonInfo.buttonName || "soldout";
-                buttonInfo.buttonText = buttonInfo.buttonText || "已售罄";
+                buttonInfo.buttonName = "soldout";
+                buttonInfo.buttonText = "已售罄";
+            } else if (html.includes("预约申购已结束")) {
+                buttonInfo.buttonName = "appointment_ended";
+                buttonInfo.buttonText = "预约申购已结束";
             } else if (html.includes("立即预约") || html.includes("预约")) {
-                buttonInfo.buttonName = buttonInfo.buttonName || "appointment";
-                buttonInfo.buttonText = buttonInfo.buttonText || "立即预约";
+                buttonInfo.buttonName = "appointment";
+                buttonInfo.buttonText = "立即预约";
             } else if (html.includes("即将上市")) {
-                buttonInfo.buttonName = buttonInfo.buttonName || "coming_soon";
-                buttonInfo.buttonText = buttonInfo.buttonText || "即将上市";
+                buttonInfo.buttonName = "coming_soon";
+                buttonInfo.buttonText = "即将上市";
             }
         }
         
-        // 返回找到的信息或默认值
-        return {
-            buttonName: buttonInfo.buttonName || "unknown",
-            buttonText: buttonInfo.buttonText || "未知状态"
-        };
+        return buttonInfo;
     } catch (error) {
         console.log("提取按钮信息出错: " + error);
         return {
