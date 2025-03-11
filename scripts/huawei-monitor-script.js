@@ -63,6 +63,40 @@ function extractButtonInfo(html) {
     try {
         console.log("开始尝试提取按钮信息...");
         
+        // 首先保存HTML内容到文件用于调试（仅调试模式）
+        if (config.debug) {
+            console.log("HTML内容长度：" + html.length);
+            console.log("HTML内容前200字符：" + html.substring(0, 200));
+            
+            // 检查HTML中是否包含特定关键词
+            const keywords = ["buttonName", "buttonText", "加入购物车", "button"];
+            for (const keyword of keywords) {
+                console.log(`HTML中${html.includes(keyword) ? '包含' : '不包含'}关键词：${keyword}`);
+            }
+        }
+        
+        // 直接在HTML中搜索商品状态的关键信息
+        if (html.includes("加入购物车")) {
+            buttonInfo.buttonName = "add_to_cart";
+            buttonInfo.buttonText = "加入购物车";
+            return buttonInfo;
+        } else if (html.includes("已售罄") || html.includes("售罄")) {
+            buttonInfo.buttonName = "soldout";
+            buttonInfo.buttonText = "已售罄";
+            return buttonInfo;
+        } else if (html.includes("立即预约") || html.includes("预约")) {
+            buttonInfo.buttonName = "appointment";
+            buttonInfo.buttonText = "立即预约";
+            return buttonInfo;
+        } else if (html.includes("即将上市") || html.includes("coming_soon")) {
+            buttonInfo.buttonName = "coming_soon";
+            buttonInfo.buttonText = "即将上市";
+            return buttonInfo;
+        }
+        
+        // 如果关键词搜索失败，尝试使用正则表达式
+        console.log("关键词搜索失败，尝试使用正则表达式...");
+        
         // 以下是可能的几种提取模式
         const patterns = [
             // 模式1: 标准格式 buttonName: 'xxx'
@@ -79,16 +113,6 @@ function extractButtonInfo(html) {
             {
                 nameRegex: /var[\s]+buttonName[\s]*=[\s]*["'](.*?)["']/i,
                 textRegex: /var[\s]+buttonText[\s]*=[\s]*["'](.*?)["']/i
-            },
-            // 模式4: 使用双引号 buttonName: "xxx"
-            {
-                nameRegex: /buttonName[\s]*:[\s]*"(.*?)"/i,
-                textRegex: /buttonText[\s]*:[\s]*"(.*?)"/i
-            },
-            // 模式5: 使用双引号 'buttonName': "xxx"
-            {
-                nameRegex: /'buttonName'[\s]*:[\s]*["'](.*?)["']/i,
-                textRegex: /'buttonText'[\s]*:[\s]*["'](.*?)["']/i
             }
         ];
         
@@ -112,18 +136,30 @@ function extractButtonInfo(html) {
             }
         }
         
-        // 如果未找到任何值，尝试找出所有可能的buttonName和buttonText
+        // 如果仍然未找到任何值，尝试查找任何按钮相关信息
         if (!buttonInfo.buttonName && !buttonInfo.buttonText) {
-            console.log("未通过模式匹配找到按钮信息，尝试查找所有包含button的文本...");
+            console.log("标准提取方法均失败，尝试查找任何按钮相关信息...");
             
-            // 尝试找出所有包含button的行
-            const buttonLines = html.split('\n')
-                .filter(line => line.includes('button') || line.includes('Button'))
-                .slice(0, 10);  // 只取前10行
+            // 尝试找到所有包含button或btn的标签
+            const buttonRegex = /<button[^>]*>(.*?)<\/button>/gi;
+            const buttonMatches = html.match(buttonRegex);
+            
+            if (buttonMatches && buttonMatches.length > 0) {
+                console.log("找到按钮元素：" + buttonMatches[0]);
+                // 分析第一个按钮
+                const firstButton = buttonMatches[0];
                 
-            if (buttonLines.length > 0) {
-                console.log("找到可能相关的按钮文本行:");
-                buttonLines.forEach((line, i) => console.log(`${i+1}: ${line.trim()}`));
+                // 提取按钮文本
+                const textMatch = firstButton.match(/>([^<]+)</);
+                if (textMatch && textMatch[1]) {
+                    buttonInfo.buttonText = textMatch[1].trim();
+                }
+                
+                // 提取按钮类型/名称 (从class或id属性)
+                const classMatch = firstButton.match(/class=["']([^"']*?)["']/i);
+                if (classMatch && classMatch[1]) {
+                    buttonInfo.buttonName = classMatch[1].includes("disabled") ? "soldout" : "unknown_" + classMatch[1];
+                }
             }
         }
     } catch (error) {
@@ -147,43 +183,63 @@ async function checkProductStatus() {
     let startMessage = `**监控开始**\n- 商品：${config.productName}\n- 时间：${new Date().toLocaleString("zh-CN")}\n- 状态：开始检查\n- 链接：${config.productUrl}\n`;
     
     try {
-        let response;
         let html = "";
         let fetchSuccess = false;
         
-        // 添加重试机制
-        while (retryCount < MAX_RETRIES) {
+        // 尝试POST请求
+        console.log("尝试使用POST方法请求...");
+        try {
+            const postResponse = await $httpClient.post({
+                url: config.productUrl,
+                headers: {
+                    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Connection": "keep-alive",
+                    "Referer": "https://m.vmall.com/"
+                },
+                timeout: 30000 // 设置30秒超时
+            });
+            
+            if (postResponse && postResponse.body) {
+                html = postResponse.body;
+                fetchSuccess = true;
+                console.log("POST请求成功获取HTML内容");
+            }
+        } catch (postError) {
+            console.log("POST请求失败: " + postError);
+        }
+        
+        // 如果POST失败，尝试GET请求
+        if (!fetchSuccess) {
+            console.log("尝试使用GET方法请求...");
             try {
-                // 获取网页内容
-                response = await $httpClient.get({
+                const getResponse = await $httpClient.get({
                     url: config.productUrl,
                     headers: {
                         "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
                         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language": "zh-CN,zh-Hans;q=0.9"
+                        "Accept-Language": "zh-CN,zh-Hans;q=0.9",
+                        "Connection": "keep-alive",
+                        "Referer": "https://m.vmall.com/"
                     },
                     timeout: 30000 // 设置30秒超时
                 });
                 
-                // 检查响应是否有效
-                if (response && response.body) {
-                    html = response.body;
+                if (getResponse && getResponse.body) {
+                    html = getResponse.body;
                     fetchSuccess = true;
-                    break; // 成功获取数据，跳出重试循环
-                } else {
-                    throw new Error("响应为空");
+                    console.log("GET请求成功获取HTML内容");
                 }
-            } catch (fetchError) {
-                retryCount++;
-                console.log(`第${retryCount}次请求失败: ${fetchError}`);
-                
-                if (retryCount >= MAX_RETRIES) {
-                    throw new Error(`请求失败，已重试${MAX_RETRIES}次: ${fetchError}`);
-                }
-                
-                // 等待一段时间后重试
-                await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            } catch (getError) {
+                console.log("GET请求失败: " + getError);
+                throw new Error("GET和POST请求均失败: " + getError);
             }
+        }
+        
+        if (!fetchSuccess || !html) {
+            throw new Error("无法获取HTML内容，请求结果为空");
         }
         
         // 提取按钮信息
