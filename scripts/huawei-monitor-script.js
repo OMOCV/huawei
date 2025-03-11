@@ -54,200 +54,103 @@ async function sendPushDeerNotification(title, content) {
     }
 }
 
-// 提取按钮信息
+// 提取按钮信息 - 简化版
 function extractButtonInfo(html) {
     const buttonInfo = {
         buttonName: "",
         buttonText: ""
     };
     
-    if (!html) {
-        console.log("HTML内容为空，无法提取信息");
+    if (!html || html.length < 100) {
+        console.log("HTML内容为空或太短，无法提取信息");
         return buttonInfo;
     }
     
     try {
-        console.log("开始尝试提取按钮信息...");
+        console.log("使用简化逻辑提取按钮信息...");
         
-        // 定义可能的按钮状态标识
-        const buttonStates = [
-            { name: "add_to_cart", text: "加入购物车", keywords: ["加入购物车", "add_to_cart", "cart"] },
-            { name: "buy_now", text: "立即购买", keywords: ["立即购买", "buy_now", "立刻购买", "buy"] },
-            { name: "soldout", text: "已售罄", keywords: ["已售罄", "售罄", "卖完", "soldout", "sold_out", "sold out"] },
-            { name: "appointment", text: "立即预约", keywords: ["立即预约", "预约", "appointment", "reserve"] },
-            { name: "coming_soon", text: "即将上市", keywords: ["即将上市", "coming_soon", "即将"] }
-        ];
-        
-        // 方法1: 全文搜索关键词
-        console.log("方法1: 全文搜索关键词");
-        for (const state of buttonStates) {
-            for (const keyword of state.keywords) {
-                if (html.includes(keyword)) {
-                    console.log(`找到关键词 "${keyword}", 匹配到按钮状态: ${state.name}`);
-                    buttonInfo.buttonName = state.name;
-                    buttonInfo.buttonText = state.text;
-                    return buttonInfo;
+        // 在调试模式下记录HTML片段
+        if (config.debug) {
+            // 记录HTML长度
+            console.log(`HTML内容长度: ${html.length}`);
+            
+            // 尝试搜索具体的按钮信息模式
+            const simplePatterns = [
+                /"buttonName"\s*:\s*"([^"]+)"/,
+                /"buttonText"\s*:\s*"([^"]+)"/,
+                /buttonName\s*:\s*'([^']+)'/,
+                /buttonText\s*:\s*'([^']+)'/,
+                /buttonName\s*:\s*"([^"]+)"/,
+                /buttonText\s*:\s*"([^"]+)"/
+            ];
+            
+            for (const pattern of simplePatterns) {
+                const match = html.match(pattern);
+                if (match && match[1]) {
+                    console.log(`找到匹配: ${pattern} -> ${match[1]}`);
                 }
+            }
+            
+            // 搜索所有包含button的行，帮助分析
+            console.log("所有包含'button'的行:");
+            const lines = html.split("\n");
+            lines.forEach((line, i) => {
+                if (line.toLowerCase().includes("button")) {
+                    console.log(`行 ${i+1}: ${line.trim()}`);
+                }
+            });
+        }
+        
+        // 尝试寻找buttonName和buttonText
+        const nameMatch = html.match(/['"](buttonName)['"]?\s*:\s*['"]([^'"]+)['"]/i) || 
+                          html.match(/buttonName\s*[:=]\s*['"]([^'"]+)['"]/i);
+                          
+        const textMatch = html.match(/['"](buttonText)['"]?\s*:\s*['"]([^'"]+)['"]/i) || 
+                          html.match(/buttonText\s*[:=]\s*['"]([^'"]+)['"]/i);
+        
+        if (nameMatch) {
+            buttonInfo.buttonName = nameMatch[2] || nameMatch[1];
+            console.log(`找到buttonName: ${buttonInfo.buttonName}`);
+        }
+        
+        if (textMatch) {
+            buttonInfo.buttonText = textMatch[2] || textMatch[1];
+            console.log(`找到buttonText: ${buttonInfo.buttonText}`);
+        }
+        
+        // 如果未找到名称或文本，尝试识别常见状态
+        if (!buttonInfo.buttonName || !buttonInfo.buttonText) {
+            // 直接搜索常见状态词
+            if (html.includes("加入购物车")) {
+                buttonInfo.buttonName = buttonInfo.buttonName || "add_to_cart";
+                buttonInfo.buttonText = buttonInfo.buttonText || "加入购物车";
+            } else if (html.includes("立即购买")) {
+                buttonInfo.buttonName = buttonInfo.buttonName || "buy_now";
+                buttonInfo.buttonText = buttonInfo.buttonText || "立即购买";
+            } else if (html.includes("已售罄") || html.includes("售罄")) {
+                buttonInfo.buttonName = buttonInfo.buttonName || "soldout";
+                buttonInfo.buttonText = buttonInfo.buttonText || "已售罄";
+            } else if (html.includes("立即预约") || html.includes("预约")) {
+                buttonInfo.buttonName = buttonInfo.buttonName || "appointment";
+                buttonInfo.buttonText = buttonInfo.buttonText || "立即预约";
+            } else if (html.includes("即将上市")) {
+                buttonInfo.buttonName = buttonInfo.buttonName || "coming_soon";
+                buttonInfo.buttonText = buttonInfo.buttonText || "即将上市";
             }
         }
         
-        // 方法2: 分析JSON数据
-        console.log("方法1失败，尝试方法2: 分析JSON数据");
-        const jsonRegex = /window\.__initial_state__\s*=\s*({.*?});/s;
-        const jsonMatch = html.match(jsonRegex);
-        if (jsonMatch && jsonMatch[1]) {
-            console.log("找到初始状态JSON数据");
-            try {
-                const jsonStr = jsonMatch[1];
-                // 在JSON中查找按钮相关信息
-                for (const state of buttonStates) {
-                    for (const keyword of state.keywords) {
-                        if (jsonStr.includes(keyword)) {
-                            console.log(`在JSON中找到关键词 "${keyword}", 匹配到按钮状态: ${state.name}`);
-                            buttonInfo.buttonName = state.name;
-                            buttonInfo.buttonText = state.text;
-                            return buttonInfo;
-                        }
-                    }
-                }
-            } catch (e) {
-                console.log("JSON解析失败: " + e);
-            }
-        }
-        
-        // 方法3: 尝试正则表达式匹配
-        console.log("方法2失败，尝试方法3: 正则表达式匹配");
-        // 更多的正则表达式模式
-        const patterns = [
-            // 模式1: Vue组件中的按钮属性
-            { regex: /(?:btn|button)(?:Name|Text|Type)['":\s]+['"]([^'"]+)['"]/gi }, 
-            // 模式2: 按钮状态
-            { regex: /(?:状态|state|status)['":\s]+['"]([^'"]+)['"]/gi },
-            // 模式3: 商品状态
-            { regex: /(?:商品|product)(?:状态|State|Status)['":\s]+['"]([^'"]+)['"]/gi }
-        ];
-        
-        for (const pattern of patterns) {
-            const matches = [...html.matchAll(pattern.regex)];
-            if (matches.length > 0) {
-                console.log(`使用模式 ${pattern.regex} 找到匹配:`);
-                for (const match of matches) {
-                    const value = match[1];
-                    console.log(`- ${value}`);
-                    
-                    // 检查匹配的文本是否包含任何已知的按钮状态关键词
-                    for (const state of buttonStates) {
-                        if (state.keywords.some(k => value.includes(k))) {
-                            console.log(`匹配到按钮状态: ${state.name}`);
-                            buttonInfo.buttonName = state.name;
-                            buttonInfo.buttonText = state.text;
-                            return buttonInfo;
-                        }
-                    }
-                    
-                    // 如果没有匹配到任何已知状态，但找到了文本，使用第一个找到的值
-                    if (!buttonInfo.buttonName) {
-                        console.log(`无法识别的按钮状态: ${value}，设为默认值`);
-                        buttonInfo.buttonName = "unknown";
-                        buttonInfo.buttonText = value;
-                    }
-                }
-                
-                // 如果已找到按钮信息，返回
-                if (buttonInfo.buttonName && buttonInfo.buttonText) {
-                    return buttonInfo;
-                }
-            }
-        }
-        
-        // 方法4: 搜索按钮元素
-        console.log("方法3失败，尝试方法4: 搜索按钮元素");
-        const buttonElements = [
-            ...html.matchAll(/<button[^>]*>(.*?)<\/button>/gi),
-            ...html.matchAll(/<a[^>]*class="[^"]*btn[^"]*"[^>]*>(.*?)<\/a>/gi),
-            ...html.matchAll(/<div[^>]*class="[^"]*btn[^"]*"[^>]*>(.*?)<\/div>/gi)
-        ];
-        
-        if (buttonElements.length > 0) {
-            console.log(`找到 ${buttonElements.length} 个可能的按钮元素`);
-            
-            for (const buttonMatch of buttonElements) {
-                const buttonHtml = buttonMatch[0];
-                const buttonText = buttonMatch[1]?.trim();
-                
-                if (!buttonText) continue;
-                
-                console.log(`按钮文本: ${buttonText}`);
-                
-                // 检查按钮是否包含禁用状态
-                const isDisabled = buttonHtml.includes('disabled') || 
-                                  buttonHtml.includes('disable') || 
-                                  buttonHtml.includes('gray');
-                
-                // 检查按钮文本是否匹配任何状态
-                for (const state of buttonStates) {
-                    if (state.keywords.some(k => buttonText.includes(k))) {
-                        console.log(`按钮文本匹配到状态: ${state.name}`);
-                        buttonInfo.buttonName = state.name;
-                        buttonInfo.buttonText = buttonText;
-                        return buttonInfo;
-                    }
-                }
-                
-                // 如果是禁用按钮，可能是售罄状态
-                if (isDisabled) {
-                    console.log("按钮处于禁用状态，可能已售罄");
-                    buttonInfo.buttonName = "soldout";
-                    buttonInfo.buttonText = "已售罄";
-                    return buttonInfo;
-                }
-                
-                // 如果没找到特定状态，但有按钮文本，使用第一个有效的按钮
-                if (!buttonInfo.buttonText) {
-                    buttonInfo.buttonName = "unknown";
-                    buttonInfo.buttonText = buttonText;
-                }
-            }
-        }
-        
-        // 方法5: 最后尝试，根据标题和价格信息推断状态
-        if (!buttonInfo.buttonName) {
-            console.log("方法4失败，尝试方法5: 根据商品信息推断状态");
-            
-            // 检查是否有价格信息，通常有价格的商品是可以购买的
-            const hasPriceInfo = html.includes('￥') || html.includes('价格') || html.includes('price');
-            
-            // 检查是否有库存信息
-            const hasStockInfo = html.includes('库存') || html.includes('stock');
-            
-            // 检查是否提到预售或即将上市
-            const isPreSale = html.includes('预售') || html.includes('预购') || html.includes('预约');
-            const isComingSoon = html.includes('即将') || html.includes('coming soon');
-            
-            if (isComingSoon) {
-                buttonInfo.buttonName = "coming_soon";
-                buttonInfo.buttonText = "即将上市";
-            } else if (isPreSale) {
-                buttonInfo.buttonName = "appointment";
-                buttonInfo.buttonText = "立即预约";
-            } else if (hasPriceInfo && hasStockInfo) {
-                buttonInfo.buttonName = "add_to_cart";
-                buttonInfo.buttonText = "加入购物车";
-            } else if (hasPriceInfo) {
-                buttonInfo.buttonName = "buy_now";
-                buttonInfo.buttonText = "立即购买";
-            } else {
-                buttonInfo.buttonName = "unknown";
-                buttonInfo.buttonText = "未知状态";
-            }
-            
-            console.log(`根据页面内容推断状态: ${buttonInfo.buttonName}`);
-        }
+        // 返回找到的信息或默认值
+        return {
+            buttonName: buttonInfo.buttonName || "unknown",
+            buttonText: buttonInfo.buttonText || "未知状态"
+        };
     } catch (error) {
         console.log("提取按钮信息出错: " + error);
+        return {
+            buttonName: "error",
+            buttonText: "提取错误: " + error
+        };
     }
-    
-    return buttonInfo;
 }
 
 // 主函数
@@ -366,7 +269,7 @@ async function checkProductStatus() {
         console.log(`当前状态 - buttonName: ${currentInfo.buttonName}, buttonText: ${currentInfo.buttonText}`);
         
         // 将按钮信息添加到开始通知中
-        startMessage += `- 按钮名称: ${currentInfo.buttonName || "未提取到"}\n- 按钮文本: ${currentInfo.buttonText || "未提取到"}`;
+        startMessage += `- 按钮名称: ${currentInfo.buttonName || "未提取到"}\n- 按钮文本: ${currentInfo.buttonText || "未提取到"}\n- HTML长度: ${html.length}字节`;
         
         // 发送更新后的通知
         await sendPushDeerNotification(
