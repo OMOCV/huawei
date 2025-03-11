@@ -175,42 +175,90 @@ async function checkProductStatus() {
         // 判断是否发生变化
         const hasChanged = (currentInfo.buttonName !== lastButtonName || currentInfo.buttonText !== lastButtonText);
         
+        // 解析当前商品状态含义
+        let statusExplanation = "";
+        if (currentInfo.buttonName === "add_to_cart" && currentInfo.buttonText === "加入购物车") {
+            statusExplanation = "✅ 可以购买";
+        } else if (currentInfo.buttonName === "appointment" || currentInfo.buttonText.includes("预约")) {
+            statusExplanation = "🕒 仅可预约";
+        } else if (currentInfo.buttonName === "soldout" || currentInfo.buttonText.includes("售罄")) {
+            statusExplanation = "❌ 已售罄";
+        } else if (currentInfo.buttonName === "coming_soon" || currentInfo.buttonText.includes("即将")) {
+            statusExplanation = "🔜 即将上市";
+        } else {
+            statusExplanation = "⚠️ 未知状态";
+        }
+        
         // 构建状态消息
-        let statusMessage = `**商品状态**\n- 商品名称：${config.productName}\n- 当前按钮名称：${currentInfo.buttonName}\n- 当前按钮文本：${currentInfo.buttonText}\n`;
+        let statusMessage = `**商品状态监控通知**\n`;
+        statusMessage += `\n### 基本信息\n`;
+        statusMessage += `- 商品名称：${config.productName}\n`;
+        statusMessage += `- 检查时间：${new Date().toLocaleString("zh-CN")}\n`;
+        
+        statusMessage += `\n### 当前状态\n`;
+        statusMessage += `- 状态含义：${statusExplanation}\n`;
+        statusMessage += `- 按钮名称：${currentInfo.buttonName || "未获取到"}\n`;
+        statusMessage += `- 按钮文本：${currentInfo.buttonText || "未获取到"}\n`;
         
         // 如果不是首次运行，添加对比信息
         if (!isFirstRun) {
-            statusMessage += `- 上次按钮名称：${lastButtonName}\n- 上次按钮文本：${lastButtonText}\n`;
+            statusMessage += `\n### 对比信息\n`;
+            statusMessage += `- 上次按钮名称：${lastButtonName || "未获取到"}\n`;
+            statusMessage += `- 上次按钮文本：${lastButtonText || "未获取到"}\n`;
             statusMessage += `- 状态变化：${hasChanged ? '✅ 已变化' : '❌ 无变化'}\n`;
         } else {
+            statusMessage += `\n### 初始化信息\n`;
             statusMessage += `- 首次运行，记录初始状态\n`;
             // 设置首次运行标志为false
             $persistentStore.write("false", "vmall_isFirstRun");
         }
         
-        // 添加时间信息
-        statusMessage += `- 检查时间：${new Date().toLocaleString("zh-CN")}`;
+        statusMessage += `\n### 链接信息\n`;
+        statusMessage += `- 商品链接：${config.productUrl}`;
         
         // 更新持久化存储
         $persistentStore.write(currentInfo.buttonName, "vmall_lastButtonName");
         $persistentStore.write(currentInfo.buttonText, "vmall_lastButtonText");
         
+        // 构建通知标题
+        let notificationTitle = "";
+        if (hasChanged && !isFirstRun) {
+            notificationTitle = `⚠️ ${config.productName} 状态变化 ⚠️ (${statusExplanation})`;
+        } else {
+            notificationTitle = `✅ ${config.productName} 状态检查 (${statusExplanation})`;
+        }
+        
         // 发送工作流完成通知
-        await sendPushDeerNotification(
-            hasChanged && !isFirstRun ? "⚠️ 商品状态已变化 ⚠️" : "✅ 商品状态检查完成",
-            statusMessage
-        );
+        await sendPushDeerNotification(notificationTitle, statusMessage);
         
         // 如果状态发生变化且不是首次运行，则发送弹窗通知
         if (hasChanged && !isFirstRun) {
             $notification.post(
                 "⚠️ 商品状态变化提醒",
-                `${config.productName} 状态已更新`,
-                `按钮名称: ${currentInfo.buttonName}\n按钮文本: ${currentInfo.buttonText}`,
+                `${config.productName}: ${statusExplanation}`,
+                `按钮名称: ${currentInfo.buttonName}\n按钮文本: ${currentInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
                 {
                     url: config.productUrl
                 }
             );
+        }
+        
+        // 即使状态没有变化，也发送当前状态通知（每小时最多一次，避免过多通知）
+        const lastNotifyTime = $persistentStore.read("vmall_lastNotifyTime") || 0;
+        const currentTime = new Date().getTime();
+        const ONE_HOUR = 60 * 60 * 1000; // 1小时的毫秒数
+        
+        if (currentTime - lastNotifyTime > ONE_HOUR) {
+            $notification.post(
+                "📢 商品状态通知",
+                `${config.productName}: ${statusExplanation}`,
+                `按钮名称: ${currentInfo.buttonName}\n按钮文本: ${currentInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
+                {
+                    url: config.productUrl
+                }
+            );
+            // 更新最后通知时间
+            $persistentStore.write(currentTime.toString(), "vmall_lastNotifyTime");
         }
         
         // 完成脚本执行
