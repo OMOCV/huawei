@@ -11,7 +11,10 @@ const config = {
     pushDeerUrl: "https://api2.pushdeer.com/message/push",
     
     // 调试模式 - 设置为true时会输出更多日志
-    debug: true
+    debug: true,
+    
+    // 是否发送HTML片段到通知
+    sendHtmlInNotification: true
 };
 
 // 发送PushDeer通知的函数
@@ -58,34 +61,69 @@ function extractButtonInfo(html) {
     }
     
     try {
-        // 使用正则表达式提取buttonName（更加宽松的匹配模式）
-        const buttonNameRegex = /buttonName[\s]*:[\s]*(['"])(.*?)\1/i;
-        const buttonNameMatch = html.match(buttonNameRegex);
-        if (buttonNameMatch && buttonNameMatch[2]) {
-            buttonInfo.buttonName = buttonNameMatch[2];
-        }
+        console.log("开始尝试提取按钮信息...");
         
-        // 使用正则表达式提取buttonText（更加宽松的匹配模式）
-        const buttonTextRegex = /buttonText[\s]*:[\s]*(['"])(.*?)\1/i;
-        const buttonTextMatch = html.match(buttonTextRegex);
-        if (buttonTextMatch && buttonTextMatch[2]) {
-            buttonInfo.buttonText = buttonTextMatch[2];
-        }
+        // 以下是可能的几种提取模式
+        const patterns = [
+            // 模式1: 标准格式 buttonName: 'xxx'
+            {
+                nameRegex: /buttonName[\s]*:[\s]*(['"])(.*?)\1/i,
+                textRegex: /buttonText[\s]*:[\s]*(['"])(.*?)\1/i
+            },
+            // 模式2: JSON格式 "buttonName": "xxx"
+            {
+                nameRegex: /["']buttonName["'][\s]*:[\s]*["'](.*?)["']/i,
+                textRegex: /["']buttonText["'][\s]*:[\s]*["'](.*?)["']/i
+            },
+            // 模式3: 变量赋值格式 var buttonName = 'xxx'
+            {
+                nameRegex: /var[\s]+buttonName[\s]*=[\s]*["'](.*?)["']/i,
+                textRegex: /var[\s]+buttonText[\s]*=[\s]*["'](.*?)["']/i
+            },
+            // 模式4: 使用双引号 buttonName: "xxx"
+            {
+                nameRegex: /buttonName[\s]*:[\s]*"(.*?)"/i,
+                textRegex: /buttonText[\s]*:[\s]*"(.*?)"/i
+            },
+            // 模式5: 使用双引号 'buttonName': "xxx"
+            {
+                nameRegex: /'buttonName'[\s]*:[\s]*["'](.*?)["']/i,
+                textRegex: /'buttonText'[\s]*:[\s]*["'](.*?)["']/i
+            }
+        ];
         
-        // 如果第一种正则表达式没有匹配成功，尝试另一种可能的格式
-        if (!buttonInfo.buttonName) {
-            const altButtonNameRegex = /["']buttonName["'][\s]*:[\s]*["'](.*?)["']/i;
-            const altButtonNameMatch = html.match(altButtonNameRegex);
-            if (altButtonNameMatch && altButtonNameMatch[1]) {
-                buttonInfo.buttonName = altButtonNameMatch[1];
+        // 尝试所有可能的模式
+        for (const pattern of patterns) {
+            const nameMatch = html.match(pattern.nameRegex);
+            if (nameMatch && nameMatch.length > 1) {
+                buttonInfo.buttonName = nameMatch[nameMatch.length - 1];
+                console.log(`找到buttonName: ${buttonInfo.buttonName}, 使用模式: ${pattern.nameRegex}`);
+            }
+            
+            const textMatch = html.match(pattern.textRegex);
+            if (textMatch && textMatch.length > 1) {
+                buttonInfo.buttonText = textMatch[textMatch.length - 1];
+                console.log(`找到buttonText: ${buttonInfo.buttonText}, 使用模式: ${pattern.textRegex}`);
+            }
+            
+            // 如果两个值都找到了，就停止搜索
+            if (buttonInfo.buttonName && buttonInfo.buttonText) {
+                break;
             }
         }
         
-        if (!buttonInfo.buttonText) {
-            const altButtonTextRegex = /["']buttonText["'][\s]*:[\s]*["'](.*?)["']/i;
-            const altButtonTextMatch = html.match(altButtonTextRegex);
-            if (altButtonTextMatch && altButtonTextMatch[1]) {
-                buttonInfo.buttonText = altButtonTextMatch[1];
+        // 如果未找到任何值，尝试找出所有可能的buttonName和buttonText
+        if (!buttonInfo.buttonName && !buttonInfo.buttonText) {
+            console.log("未通过模式匹配找到按钮信息，尝试查找所有包含button的文本...");
+            
+            // 尝试找出所有包含button的行
+            const buttonLines = html.split('\n')
+                .filter(line => line.includes('button') || line.includes('Button'))
+                .slice(0, 10);  // 只取前10行
+                
+            if (buttonLines.length > 0) {
+                console.log("找到可能相关的按钮文本行:");
+                buttonLines.forEach((line, i) => console.log(`${i+1}: ${line.trim()}`));
             }
         }
     } catch (error) {
@@ -116,7 +154,8 @@ async function checkProductStatus() {
     
     try {
         let response;
-        let html;
+        let html = "";
+        let fetchSuccess = false;
         
         // 添加重试机制
         while (retryCount < MAX_RETRIES) {
@@ -124,12 +163,18 @@ async function checkProductStatus() {
                 // 获取网页内容
                 response = await $httpClient.get({
                     url: config.productUrl,
+                    headers: {
+                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "zh-CN,zh-Hans;q=0.9"
+                    },
                     timeout: 30000 // 设置30秒超时
                 });
                 
                 // 检查响应是否有效
                 if (response && response.body) {
                     html = response.body;
+                    fetchSuccess = true;
                     break; // 成功获取数据，跳出重试循环
                 } else {
                     throw new Error("响应为空");
@@ -151,19 +196,41 @@ async function checkProductStatus() {
         if (config.debug) {
             console.log("HTML片段预览（前1000字符）:");
             console.log(html.substring(0, 1000));
+            
+            // 输出到通知
+            await sendPushDeerNotification(
+                "🔍 HTML调试信息",
+                `**HTML片段预览**\n\`\`\`\n${html.substring(0, 300)}\n...\n\`\`\``
+            );
         }
         
         // 提取按钮信息
         const currentInfo = extractButtonInfo(html);
         console.log(`当前状态 - buttonName: ${currentInfo.buttonName}, buttonText: ${currentInfo.buttonText}`);
         
+        // 立即通知当前提取到的值（无论是否提取成功）
+        const extractionStatus = `**当前提取结果**\n- 成功获取HTML: ${fetchSuccess ? '✅' : '❌'}\n- 提取到的buttonName: ${currentInfo.buttonName || "未提取到"}\n- 提取到的buttonText: ${currentInfo.buttonText || "未提取到"}\n- 提取时间: ${new Date().toLocaleString("zh-CN")}`;
+        
+        await sendPushDeerNotification(
+            "🔄 商品监控提取结果",
+            extractionStatus
+        );
+        
         // 如果提取失败，发送警告
         if (!currentInfo.buttonName && !currentInfo.buttonText) {
             await sendPushDeerNotification(
                 "⚠️ 商品监控警告",
-                `**提取失败**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- 可能网页结构已变化，请检查脚本`
+                `**提取失败**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- HTML获取: ${fetchSuccess ? "成功" : "失败"}\n- 可能网页结构已变化，请检查脚本\n\n**HTML片段**\n\`\`\`\n${html.substring(0, 200)}...\n\`\`\``
             );
-            $notification.post("商品监控警告", "提取信息失败", "可能网页结构已变化，请检查脚本");
+            
+            // 即使提取失败也发送弹窗通知
+            $notification.post(
+                "⚠️ 商品监控提取失败",
+                `${config.productName}: 无法提取按钮信息`,
+                `请检查脚本或网页结构是否变化\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
+                { url: config.productUrl }
+            );
+            
             $done();
             return;
         }
@@ -243,23 +310,15 @@ async function checkProductStatus() {
             );
         }
         
-        // 即使状态没有变化，也发送当前状态通知（每小时最多一次，避免过多通知）
-        const lastNotifyTime = $persistentStore.read("vmall_lastNotifyTime") || 0;
-        const currentTime = new Date().getTime();
-        const ONE_HOUR = 60 * 60 * 1000; // 1小时的毫秒数
-        
-        if (currentTime - lastNotifyTime > ONE_HOUR) {
-            $notification.post(
-                "📢 商品状态通知",
-                `${config.productName}: ${statusExplanation}`,
-                `按钮名称: ${currentInfo.buttonName}\n按钮文本: ${currentInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
-                {
-                    url: config.productUrl
-                }
-            );
-            // 更新最后通知时间
-            $persistentStore.write(currentTime.toString(), "vmall_lastNotifyTime");
-        }
+        // 即使状态没有变化，也立即发送当前状态弹窗通知
+        $notification.post(
+            "📢 商品当前状态",
+            `${config.productName}`,
+            `按钮名称: ${currentInfo.buttonName || "未知"}\n按钮文本: ${currentInfo.buttonText || "未知"}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
+            {
+                url: config.productUrl
+            }
+        );
         
         // 完成脚本执行
         $done();
