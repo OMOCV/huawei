@@ -1,22 +1,80 @@
-// 华为商城商品状态监控脚本 - 最终版
-// 直接提取按钮实际文本内容
+// 华为商城商品状态监控脚本 - BoxJS版
+// 支持通过BoxJS可视化配置多个商品监控
 
-// 脚本配置
-const config = {
-    // 监控商品配置
-    productUrl: "https://m.vmall.com/product/10086989076790.html",
-    productName: "华为 Mate 70 Pro+",
-
-    // PushDeer配置
-    pushDeerKey: "PDU7190TqnwsE41kjj5WQ93SqC696nYrNQx1LagV", // 需要替换为自己的PushDeer Key
-    pushDeerUrl: "https://api2.pushdeer.com/message/push"
+// 读取BoxJS配置
+const boxjsConfig = {
+    // 脚本标识
+    scriptId: 'vmall',
+    
+    // 获取BoxJS数据
+    read: function(key, defaultValue) {
+        const fullKey = `${this.scriptId}.${key}`;
+        const data = $persistentStore.read(fullKey);
+        if (data) {
+            try {
+                return JSON.parse(data);
+            } catch (e) {
+                return data;
+            }
+        }
+        return defaultValue;
+    },
+    
+    // 写入BoxJS数据
+    write: function(key, value) {
+        const fullKey = `${this.scriptId}.${key}`;
+        if (typeof value === 'object') {
+            $persistentStore.write(JSON.stringify(value), fullKey);
+        } else {
+            $persistentStore.write(value, fullKey);
+        }
+    }
 };
+
+// 获取配置
+function getConfig() {
+    // 默认配置
+    const defaultConfig = {
+        products: [
+            {
+                id: "10086989076790",
+                name: "华为 Mate 70 Pro+",
+                url: "https://m.vmall.com/product/10086989076790.html",
+                enabled: true
+            }
+        ],
+        pushDeerKey: "",
+        pushDeerUrl: "https://api2.pushdeer.com/message/push",
+        checkInterval: 5,
+        notifyOnlyOnChange: true,
+        debug: false
+    };
+    
+    // 读取BoxJS配置
+    const products = boxjsConfig.read('products', defaultConfig.products);
+    const pushDeerKey = boxjsConfig.read('pushDeerKey', defaultConfig.pushDeerKey);
+    const pushDeerUrl = boxjsConfig.read('pushDeerUrl', defaultConfig.pushDeerUrl);
+    const checkInterval = boxjsConfig.read('checkInterval', defaultConfig.checkInterval);
+    const notifyOnlyOnChange = boxjsConfig.read('notifyOnlyOnChange', defaultConfig.notifyOnlyOnChange);
+    const debug = boxjsConfig.read('debug', defaultConfig.debug);
+    
+    return {
+        products: products,
+        pushDeerKey: pushDeerKey,
+        pushDeerUrl: pushDeerUrl,
+        checkInterval: checkInterval,
+        notifyOnlyOnChange: notifyOnlyOnChange,
+        debug: debug
+    };
+}
 
 // 发送PushDeer通知函数
 function sendPushDeerNotification(title, content, callback) {
-    if (!config.pushDeerKey || config.pushDeerKey === "YOUR_PUSHDEER_KEY") {
+    const config = getConfig();
+    
+    if (!config.pushDeerKey) {
         console.log("请先配置PushDeer Key");
-        $notification.post("配置错误", "PushDeer Key未配置", "请在脚本中配置您的PushDeer Key");
+        $notification.post("配置错误", "PushDeer Key未配置", "请在BoxJS中配置您的PushDeer Key");
         callback && callback();
         return;
     }
@@ -121,83 +179,184 @@ function extractButtonInfo(html) {
     };
 }
 
-// 主函数
-function checkProductStatus() {
-    console.log("开始监控商品状态...");
+// 检查单个商品
+function checkSingleProduct(product, allResults, index, totalCount, finalCallback) {
+    if (!product.enabled) {
+        console.log(`商品 ${product.name} 已禁用，跳过检查`);
+        
+        // 更新结果
+        allResults.push({
+            name: product.name,
+            success: false,
+            message: "已禁用",
+            buttonInfo: { buttonName: "已禁用", buttonText: "已禁用" }
+        });
+        
+        // 检查是否完成所有商品
+        if (index === totalCount - 1) {
+            // 所有商品检查完毕
+            finalCallback(allResults);
+        } else {
+            // 继续检查下一个商品
+            const nextProduct = getConfig().products[index + 1];
+            checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
+        }
+        
+        return;
+    }
+    
+    console.log(`开始检查商品: ${product.name}`);
     
     // 获取上次状态
-    const lastButtonName = $persistentStore.read("vmall_lastButtonName") || "";
-    const lastButtonText = $persistentStore.read("vmall_lastButtonText") || "";
-    const isFirstRun = $persistentStore.read("vmall_isFirstRun") === null;
+    const stateKey = `vmall.product.${product.id}`;
+    const lastState = $persistentStore.read(stateKey);
+    let lastButtonName = "";
+    let lastButtonText = "";
+    let isFirstRun = true;
     
-    // 使用测试工具相同的请求方式
+    if (lastState) {
+        try {
+            const lastStateObj = JSON.parse(lastState);
+            lastButtonName = lastStateObj.buttonName || "";
+            lastButtonText = lastStateObj.buttonText || "";
+            isFirstRun = false;
+        } catch (e) {
+            console.log(`解析上次状态失败: ${e}`);
+        }
+    }
+    
+    // 使用与测试工具相同的请求方式
     $httpClient.get({
-        url: config.productUrl,
+        url: product.url,
         headers: {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
             "Accept": "text/html",
             "Accept-Language": "zh-CN,zh;q=0.9"
         }
     }, function(error, response, data) {
+        let result = {
+            name: product.name,
+            success: false,
+            message: "",
+            buttonInfo: null,
+            hasChanged: false,
+            isFirstRun: isFirstRun
+        };
+        
         // 处理错误
         if (error) {
-            const errorMessage = `**监控错误**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- 错误：${error}`;
-            sendPushDeerNotification("❌ 商品监控出错", errorMessage, function() {
-                $done();
-            });
-            return;
+            result.message = `请求错误: ${error}`;
+            console.log(`商品 ${product.name} ${result.message}`);
+        } else if (!data) {
+            result.message = "返回内容为空";
+            console.log(`商品 ${product.name} ${result.message}`);
+        } else {
+            // 成功获取内容
+            console.log(`商品 ${product.name} 成功获取HTML内容，长度: ${data.length}字符`);
+            result.success = true;
+            
+            // 提取按钮实际文本内容
+            const buttonInfo = extractButtonInfo(data);
+            console.log(`商品 ${product.name} 提取到按钮信息: buttonName=${buttonInfo.buttonName}, buttonText=${buttonInfo.buttonText}`);
+            
+            result.buttonInfo = buttonInfo;
+            
+            // 状态是否变化
+            result.hasChanged = (buttonInfo.buttonName !== lastButtonName || buttonInfo.buttonText !== lastButtonText) && !isFirstRun;
+            
+            // 保存当前状态
+            $persistentStore.write(JSON.stringify(buttonInfo), stateKey);
         }
         
-        // 检查是否获取到内容
-        if (!data) {
-            const errorMessage = `**监控错误**\n- 时间：${new Date().toLocaleString("zh-CN")}\n- 错误：返回内容为空`;
-            sendPushDeerNotification("❌ 商品监控出错", errorMessage, function() {
-                $done();
+        // 添加结果
+        allResults.push(result);
+        
+        // 检查是否完成所有商品
+        if (index === totalCount - 1) {
+            // 所有商品检查完毕
+            finalCallback(allResults);
+        } else {
+            // 继续检查下一个商品
+            const nextProduct = getConfig().products[index + 1];
+            checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
+        }
+    });
+}
+
+// 主函数 - 检查所有商品
+function checkAllProducts() {
+    const config = getConfig();
+    console.log(`开始检查所有商品，共 ${config.products.length} 个商品`);
+    
+    // 如果没有配置商品，显示提示
+    if (!config.products || config.products.length === 0) {
+        console.log("未配置任何商品");
+        $notification.post("配置错误", "未配置任何商品", "请在BoxJS中配置至少一个商品");
+        $done();
+        return;
+    }
+    
+    // 检查第一个商品，递归检查所有商品
+    const results = [];
+    checkSingleProduct(config.products[0], results, 0, config.products.length, function(allResults) {
+        // 所有商品检查完毕，发送通知
+        sendSummaryNotification(allResults);
+    });
+}
+
+// 发送汇总通知
+function sendSummaryNotification(results) {
+    const config = getConfig();
+    
+    // 检查是否有状态变化的商品
+    const changedProducts = results.filter(r => r.success && r.buttonInfo && r.hasChanged);
+    
+    // 构建汇总消息
+    let summaryTitle = "";
+    let summaryContent = "";
+    
+    if (changedProducts.length > 0) {
+        summaryTitle = `⚠️ 检测到${changedProducts.length}个商品状态变化`;
+        summaryContent = "**商品状态变化通知**\n\n";
+        
+        // 添加变化的商品信息
+        changedProducts.forEach((result, index) => {
+            summaryContent += `### ${index + 1}. ${result.name}\n`;
+            summaryContent += `- 当前按钮: ${result.buttonInfo.buttonText}\n`;
+            summaryContent += `- 检查时间: ${new Date().toLocaleString("zh-CN")}\n\n`;
+        });
+    } else {
+        summaryTitle = "✅ 商品状态检查完成";
+        summaryContent = "**商品状态检查汇总**\n\n";
+    }
+    
+    // 添加所有商品的当前状态
+    summaryContent += "**所有商品当前状态**\n\n";
+    results.forEach((result, index) => {
+        if (result.success && result.buttonInfo) {
+            summaryContent += `${index + 1}. ${result.name}: ${result.buttonInfo.buttonText}${result.hasChanged ? " (已变化)" : ""}\n`;
+        } else {
+            summaryContent += `${index + 1}. ${result.name}: 检查失败 - ${result.message}\n`;
+        }
+    });
+    
+    // 发送PushDeer通知
+    sendPushDeerNotification(summaryTitle, summaryContent, function() {
+        // 对于变化的商品，发送弹窗通知
+        if (changedProducts.length > 0) {
+            changedProducts.forEach(result => {
+                $notification.post(
+                    "⚠️ 商品状态已变化",
+                    `${result.name}`,
+                    `按钮文本: ${result.buttonInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
+                    { url: config.products.find(p => p.name === result.name)?.url || "" }
+                );
             });
-            return;
         }
         
-        console.log(`成功获取HTML内容，长度: ${data.length}字符`);
-        
-        // 提取按钮实际文本内容
-        const buttonInfo = extractButtonInfo(data);
-        console.log(`提取到按钮信息: buttonName=${buttonInfo.buttonName}, buttonText=${buttonInfo.buttonText}`);
-        
-        // 状态是否变化
-        const hasChanged = (buttonInfo.buttonName !== lastButtonName || buttonInfo.buttonText !== lastButtonText) && !isFirstRun;
-        
-        // 构建消息
-        const message = `**商品状态监控**\n\n- 商品：${config.productName}\n- 按钮名称：${buttonInfo.buttonName}\n- 按钮文本：${buttonInfo.buttonText}\n- 检查时间：${new Date().toLocaleString("zh-CN")}\n\n${isFirstRun ? "**首次运行，记录初始状态**" : `**上次状态**\n- 上次按钮名称：${lastButtonName || "未记录"}\n- 上次按钮文本：${lastButtonText || "未记录"}\n- 状态变化：${hasChanged ? '✅ 已变化' : '❌ 无变化'}`}`;
-        
-        // 发送PushDeer通知(每次都发送)
-        sendPushDeerNotification(
-            hasChanged ? "⚠️ 商品状态已变化" : "✅ 商品状态检查",
-            message,
-            function() {
-                // 只在状态变化时发送弹窗通知
-                if (hasChanged) {
-                    $notification.post(
-                        "⚠️ 商品状态已变化",
-                        `${config.productName}`,
-                        `按钮名称: ${buttonInfo.buttonName}\n按钮文本: ${buttonInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
-                        { url: config.productUrl }
-                    );
-                }
-                
-                // 更新存储的状态
-                $persistentStore.write(buttonInfo.buttonName, "vmall_lastButtonName");
-                $persistentStore.write(buttonInfo.buttonText, "vmall_lastButtonText");
-                
-                // 标记非首次运行
-                if (isFirstRun) {
-                    $persistentStore.write("false", "vmall_isFirstRun");
-                }
-                
-                $done();
-            }
-        );
+        $done();
     });
 }
 
 // 执行主函数
-checkProductStatus();
+checkAllProducts();
