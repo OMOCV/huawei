@@ -10,10 +10,11 @@
       "name": "华为商城商品状态监控",
       "descs_html": [
         "基于BoxJS的华为商城商品状态监控工具",
-        "支持监控多个商品，定时检查并通知状态变化"
+        "支持监控多个商品，定时检查并通知状态变化",
+        "只需提供华为商城链接即可，自动提取商品信息"
       ],
       "keys": [
-        "products",
+        "linksText",
         "pushDeerKey",
         "pushDeerUrl",
         "checkInterval",
@@ -22,18 +23,11 @@
       ],
       "settings": [
         {
-          "id": "products",
-          "name": "监控商品",
-          "val": [
-            {
-              "id": "10086989076790",
-              "name": "华为 Mate 70 Pro+",
-              "url": "https://m.vmall.com/product/10086989076790.html",
-              "enabled": true
-            }
-          ],
-          "type": "JSON",
-          "desc": "监控的商品列表，可以添加多个"
+          "id": "linksText",
+          "name": "监控商品链接",
+          "val": "https://m.vmall.com/product/10086989076790.html [true]",
+          "type": "textarea",
+          "desc": "要监控的商品链接，一行一个，在链接后面添加 [true] 或 [false] 控制启用/禁用，不添加默认为启用<br><br>示例：<br>https://m.vmall.com/product/10086989076790.html [true]<br>https://m.vmall.com/product/comdetail/index.html?prdId=10086989076790 [false]"
         },
         {
           "id": "pushDeerKey",
@@ -74,7 +68,7 @@
       "scripts": [
         {
           "name": "执行商品状态检查",
-          "script": "vmall-boxjs.js"
+          "script": "vmall-final-script.js"
         }
       ],
       "author": "@Claude",
