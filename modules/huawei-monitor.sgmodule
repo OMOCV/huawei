@@ -1,8 +1,8 @@
-#!name=华为商城商品状态监控(最终版)
-#!desc=提取按钮实际文本内容，只在状态变化时发送弹窗通知
+#!name=华为商城商品状态监控(BoxJS版)
+#!desc=支持通过BoxJS可视化配置多个商品监控
 
 [Script]
-华为商品监控 = type=cron,cronexp="*/5 * * * *",wake-system=1,timeout=30,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
+华为商品监控 = type=cron,cronexp="*/5 * * * *",wake-system=1,timeout=60,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
 华为商城测试工具 = type=http-request,pattern=^https?:\/\/m\.vmall\.com\/product\/.*test,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/manual-test-tool.js
 
 [MITM]
