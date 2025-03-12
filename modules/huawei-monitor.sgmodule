@@ -1,5 +1,5 @@
-#!name=华为商城商品状态监控(BoxJS版)
-#!desc=支持通过BoxJS可视化配置多个商品监控
+#!name=华为商城商品状态监控(最终版)
+#!desc=通过简单文本形式配置多个商品监控，一行一个链接
 
 [Script]
 华为商品监控 = type=cron,cronexp="*/5 * * * *",wake-system=1,timeout=60,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
