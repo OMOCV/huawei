@@ -1,29 +1,6 @@
-// 华为商城商品状态监控脚本 - BoxJS读取修复版
+// 华为商城商品状态监控脚本 - 修复版
 // 支持通过简单文本配置多个商品监控：一行一个链接
-
-// 脚本标识 - 确保与BoxJS中配置的完全一致
-const scriptId = 'vmall';
-
-// 读取BoxJS配置 - 修复版，直接读取持久化存储
-function getBoxJSConfig() {
-    const config = {};
-    
-    // 直接从持久化存储中读取配置
-    config.linksText = $persistentStore.read(`${scriptId}.linksText`) || "https://m.vmall.com/product/10086989076790.html [true]";
-    config.pushDeerKey = $persistentStore.read(`${scriptId}.pushDeerKey`) || "";
-    config.pushDeerUrl = $persistentStore.read(`${scriptId}.pushDeerUrl`) || "https://api2.pushdeer.com/message/push";
-    config.checkInterval = parseInt($persistentStore.read(`${scriptId}.checkInterval`) || "5");
-    config.notifyOnlyOnChange = ($persistentStore.read(`${scriptId}.notifyOnlyOnChange`) || "true") === "true";
-    config.debug = ($persistentStore.read(`${scriptId}.debug`) || "false") === "true";
-    
-    // 添加调试信息，检查配置是否正确读取
-    console.log("已读取BoxJS配置:");
-    console.log(`- pushDeerKey: ${config.pushDeerKey ? (config.pushDeerKey.substring(0, 3) + "******") : "未配置"}`);
-    console.log(`- pushDeerUrl: ${config.pushDeerUrl}`);
-    console.log(`- linksText包含${config.linksText.split('\n').filter(line => line.trim()).length}个链接`);
-    
-    return config;
-}
+// 修复BoxJS读取配置问题
 
 // 解析链接文本为结构化数据
 function parseLinksText(text) {
@@ -58,21 +35,82 @@ function parseLinksText(text) {
     return result;
 }
 
+// 读取PushDeer Key - 兼容多种键名
+function getPushDeerKey() {
+    // 尝试多种可能的键名
+    const possibleKeys = [
+        "vmall.pushDeerKey",  // 带命名空间前缀
+        "pushDeerKey",        // 不带前缀
+        "vmall.pushkey",      // 可能的其他写法
+        "pushkey"             // 可能的其他写法
+    ];
+    
+    // 尝试所有可能的键名
+    for (const key of possibleKeys) {
+        const value = $persistentStore.read(key);
+        console.log(`尝试读取键名 ${key}: "${value ? '有值' : '未找到'}"`);
+        
+        if (value && value.length > 5) {
+            console.log(`成功从 ${key} 读取到PushDeer Key`);
+            return value;
+        }
+    }
+    
+    // 如果找不到，提供直接设置的方法
+    console.log("无法从任何键名读取PushDeer Key，检查是否有直接设置...");
+    
+    // 这里可以直接硬编码您的PushDeer Key作为备用
+    // const directKey = "您的实际PushDeer Key";
+    const directKey = "";
+    
+    if (directKey && directKey !== "您的实际PushDeer Key" && directKey.length > 5) {
+        // 尝试保存到多个位置
+        $persistentStore.write(directKey, "vmall.pushDeerKey");
+        $persistentStore.write(directKey, "pushDeerKey");
+        console.log("已使用直接设置的PushDeer Key");
+        return directKey;
+    }
+    
+    return "";
+}
+
 // 获取配置
 function getConfig() {
-    // 获取BoxJS配置
-    const config = getBoxJSConfig();
+    // 尝试读取链接文本
+    const linksText = $persistentStore.read("vmall.linksText") || 
+                      $persistentStore.read("linksText") || 
+                      "https://m.vmall.com/product/10086989076790.html [true]";
+    
+    console.log(`读取到的链接文本: ${linksText ? '有内容' : '未找到'}`);
+    
+    // 尝试读取其他配置
+    const pushDeerUrl = $persistentStore.read("vmall.pushDeerUrl") || 
+                        $persistentStore.read("pushDeerUrl") || 
+                        "https://api2.pushdeer.com/message/push";
+    
+    const checkInterval = parseInt($persistentStore.read("vmall.checkInterval") || 
+                                  $persistentStore.read("checkInterval") || 
+                                  "5");
+    
+    const notifyOnlyOnChange = ($persistentStore.read("vmall.notifyOnlyOnChange") === "true") || 
+                               ($persistentStore.read("notifyOnlyOnChange") === "true") || 
+                               true;
+    
+    const debug = ($persistentStore.read("vmall.debug") === "true") || 
+                  ($persistentStore.read("debug") === "true") || 
+                  false;
     
     // 解析链接文本
-    const productLinks = parseLinksText(config.linksText);
+    const productLinks = parseLinksText(linksText);
+    console.log(`解析出 ${productLinks.length} 个商品链接`);
     
     return {
         productLinks: productLinks,
-        pushDeerKey: config.pushDeerKey,
-        pushDeerUrl: config.pushDeerUrl,
-        checkInterval: config.checkInterval,
-        notifyOnlyOnChange: config.notifyOnlyOnChange,
-        debug: config.debug
+        pushDeerKey: getPushDeerKey(),
+        pushDeerUrl: pushDeerUrl,
+        checkInterval: checkInterval,
+        notifyOnlyOnChange: notifyOnlyOnChange,
+        debug: debug
     };
 }
 
@@ -112,18 +150,16 @@ function sendPushDeerNotification(title, content, callback) {
     // 检查PushDeer配置
     if (!config.pushDeerKey) {
         console.log("PushDeer Key未配置，无法发送通知");
-        console.log(`读取到的pushDeerKey值为: "${config.pushDeerKey}"`);
-        console.log(`读取方式: $persistentStore.read("${scriptId}.pushDeerKey")`);
         
-        // 尝试直接读取键值
+        // 尝试直接读取键值，用于调试
         const directKey = $persistentStore.read("pushDeerKey");
-        console.log(`直接读取pushDeerKey: "${directKey}"`);
+        console.log(`直接读取pushDeerKey: "${directKey ? directKey : '未找到'}"`);
         
         // 使用备用消息通知渠道
         $notification.post(
             "配置错误", 
             "PushDeer Key未配置", 
-            "请在BoxJS中配置您的PushDeer Key，如果已配置请检查BoxJS配置是否保存成功"
+            "请在BoxJS中配置您的PushDeer Key，或直接修改脚本中的备用Key"
         );
         
         callback && callback();
@@ -278,7 +314,7 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
     
     console.log(`开始检查商品链接: ${url}`);
     
-    // 获取上次状态
+    // 获取上次状态 - 使用不带前缀的键名，提高兼容性
     const stateKey = `vmall_product_${id}`;
     const lastState = $persistentStore.read(stateKey);
     let lastButtonName = "";
@@ -438,5 +474,27 @@ function sendSummaryNotification(results) {
     });
 }
 
-// 执行主函数
-checkAllProducts();
+// 测试函数 - 仅用于测试PushDeer配置
+function testPushDeer() {
+    const config = getConfig();
+    console.log("测试PushDeer配置...");
+    console.log(`读取到的PushDeer Key: ${config.pushDeerKey ? "已配置" : "未配置"}`);
+    
+    sendPushDeerNotification(
+        "PushDeer配置测试", 
+        "如果您看到此消息，说明PushDeer配置正确！", 
+        function() {
+            $notification.post("测试完成", "已尝试发送PushDeer测试消息", "请检查您的PushDeer应用是否收到消息");
+            $done();
+        }
+    );
+}
+
+// 检查命令行参数，决定执行哪个功能
+const args = typeof $argument !== 'undefined' ? $argument : '';
+if (args.includes('test')) {
+    testPushDeer();
+} else {
+    // 执行主函数
+    checkAllProducts();
+}
