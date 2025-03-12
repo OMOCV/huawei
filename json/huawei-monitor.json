@@ -2,7 +2,7 @@
   "id": "vmall.app.sub",
   "name": "华为商城监控",
   "author": "@Claude",
-  "icon": "https://m.vmall.com/images/favicon-v3.ico",
+  "icon": "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
   "repo": "",
   "apps": [
     {
@@ -68,14 +68,14 @@
       "scripts": [
         {
           "name": "执行商品状态检查",
-          "script": "vmall-final-script.js"
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js"
         }
       ],
       "author": "@Claude",
       "repo": "",
       "icons": [
-        "https://m.vmall.com/images/favicon-v3.ico",
-        "https://m.vmall.com/images/favicon-v3.ico"
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
       ]
     }
   ]
