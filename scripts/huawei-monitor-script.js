@@ -1,5 +1,5 @@
-// 华为商城商品状态监控脚本 - BoxJS版
-// 支持通过BoxJS可视化配置多个商品监控
+// 华为商城商品状态监控脚本 - 最终版
+// 支持通过简单文本配置多个商品监控：一行一个链接
 
 // 读取BoxJS配置
 const boxjsConfig = {
@@ -31,18 +31,44 @@ const boxjsConfig = {
     }
 };
 
+// 解析链接文本为结构化数据
+function parseLinksText(text) {
+    if (!text) return [];
+    
+    // 分割文本为行
+    const lines = text.split('\n').filter(line => line.trim());
+    const result = [];
+    
+    // 处理每一行
+    lines.forEach(line => {
+        // 检查是否包含启用/禁用标记
+        let url = line.trim();
+        let enabled = true;
+        
+        // 匹配 [true] 或 [false] 标记
+        const matches = url.match(/\[(true|false)\]$/i);
+        if (matches) {
+            enabled = matches[1].toLowerCase() === 'true';
+            url = url.replace(/\[(true|false)\]$/i, '').trim();
+        }
+        
+        // 添加到结果
+        if (url) {
+            result.push({
+                url: url,
+                enabled: enabled
+            });
+        }
+    });
+    
+    return result;
+}
+
 // 获取配置
 function getConfig() {
     // 默认配置
     const defaultConfig = {
-        products: [
-            {
-                id: "10086989076790",
-                name: "华为 Mate 70 Pro+",
-                url: "https://m.vmall.com/product/10086989076790.html",
-                enabled: true
-            }
-        ],
+        linksText: "https://m.vmall.com/product/10086989076790.html [true]",
         pushDeerKey: "",
         pushDeerUrl: "https://api2.pushdeer.com/message/push",
         checkInterval: 5,
@@ -51,20 +77,52 @@ function getConfig() {
     };
     
     // 读取BoxJS配置
-    const products = boxjsConfig.read('products', defaultConfig.products);
+    const linksText = boxjsConfig.read('linksText', defaultConfig.linksText);
     const pushDeerKey = boxjsConfig.read('pushDeerKey', defaultConfig.pushDeerKey);
     const pushDeerUrl = boxjsConfig.read('pushDeerUrl', defaultConfig.pushDeerUrl);
     const checkInterval = boxjsConfig.read('checkInterval', defaultConfig.checkInterval);
     const notifyOnlyOnChange = boxjsConfig.read('notifyOnlyOnChange', defaultConfig.notifyOnlyOnChange);
     const debug = boxjsConfig.read('debug', defaultConfig.debug);
     
+    // 解析链接文本
+    const productLinks = parseLinksText(linksText);
+    
     return {
-        products: products,
+        productLinks: productLinks,
         pushDeerKey: pushDeerKey,
         pushDeerUrl: pushDeerUrl,
         checkInterval: checkInterval,
         notifyOnlyOnChange: notifyOnlyOnChange,
         debug: debug
+    };
+}
+
+// 从链接中提取商品ID和标准化URL
+function processProductLink(link) {
+    let productId = "";
+    let standardUrl = "";
+    
+    // 提取商品ID
+    if (link.includes("prdId=")) {
+        // 链接格式: https://m.vmall.com/product/comdetail/index.html?prdId=10086989076790
+        const match = link.match(/prdId=([0-9]+)/);
+        if (match && match[1]) {
+            productId = match[1];
+            // 转换为标准格式URL
+            standardUrl = `https://m.vmall.com/product/${productId}.html`;
+        }
+    } else if (link.includes("/product/")) {
+        // 链接格式: https://m.vmall.com/product/10086989076790.html
+        const match = link.match(/\/product\/([0-9]+)\.html/);
+        if (match && match[1]) {
+            productId = match[1];
+            standardUrl = link;
+        }
+    }
+    
+    return {
+        id: productId,
+        url: standardUrl || link
     };
 }
 
@@ -107,8 +165,15 @@ function extractButtonInfo(html) {
     // 默认值
     let buttonName = "";
     let buttonText = "";
+    let productName = "未知商品";
     
     try {
+        // 尝试提取商品名称
+        const titleMatch = html.match(/<title>(.*?)<\/title>/);
+        if (titleMatch && titleMatch[1]) {
+            productName = titleMatch[1].replace(/[\_\-\|].*$/, "").trim();
+        }
+        
         // 方法1: 尝试从NEXT_DATA脚本中提取JSON数据
         const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
         if (nextDataMatch && nextDataMatch[1]) {
@@ -125,6 +190,11 @@ function extractButtonInfo(html) {
                         }
                         if (product.buttonText) {
                             buttonText = product.buttonText;
+                        }
+                        if (product.name) {
+                            productName = product.name;
+                        } else if (product.sbomName) {
+                            productName = product.sbomName;
                         }
                     }
                 }
@@ -175,20 +245,22 @@ function extractButtonInfo(html) {
     
     return {
         buttonName: buttonName || "未知",
-        buttonText: buttonText || "未知状态"
+        buttonText: buttonText || "未知状态",
+        productName: productName
     };
 }
 
 // 检查单个商品
-function checkSingleProduct(product, allResults, index, totalCount, finalCallback) {
-    if (!product.enabled) {
-        console.log(`商品 ${product.name} 已禁用，跳过检查`);
+function checkSingleProduct(productLink, allResults, index, totalCount, finalCallback) {
+    if (!productLink.enabled) {
+        console.log(`商品链接 ${productLink.url} 已禁用，跳过检查`);
         
         // 更新结果
         allResults.push({
-            name: product.name,
+            url: productLink.url,
             success: false,
             message: "已禁用",
+            productName: "已禁用",
             buttonInfo: { buttonName: "已禁用", buttonText: "已禁用" }
         });
         
@@ -198,20 +270,26 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
             finalCallback(allResults);
         } else {
             // 继续检查下一个商品
-            const nextProduct = getConfig().products[index + 1];
+            const nextProduct = getConfig().productLinks[index + 1];
             checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
         }
         
         return;
     }
     
-    console.log(`开始检查商品: ${product.name}`);
+    // 处理链接，获取标准化URL
+    const productInfo = processProductLink(productLink.url);
+    const url = productInfo.url;
+    const id = productInfo.id;
+    
+    console.log(`开始检查商品链接: ${url}`);
     
     // 获取上次状态
-    const stateKey = `vmall.product.${product.id}`;
+    const stateKey = `vmall.product.${id}`;
     const lastState = $persistentStore.read(stateKey);
     let lastButtonName = "";
     let lastButtonText = "";
+    let lastProductName = "";
     let isFirstRun = true;
     
     if (lastState) {
@@ -219,6 +297,7 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
             const lastStateObj = JSON.parse(lastState);
             lastButtonName = lastStateObj.buttonName || "";
             lastButtonText = lastStateObj.buttonText || "";
+            lastProductName = lastStateObj.productName || "";
             isFirstRun = false;
         } catch (e) {
             console.log(`解析上次状态失败: ${e}`);
@@ -227,7 +306,7 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
     
     // 使用与测试工具相同的请求方式
     $httpClient.get({
-        url: product.url,
+        url: url,
         headers: {
             "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1",
             "Accept": "text/html",
@@ -235,9 +314,10 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
         }
     }, function(error, response, data) {
         let result = {
-            name: product.name,
+            url: url,
             success: false,
             message: "",
+            productName: lastProductName || "未知商品",
             buttonInfo: null,
             hasChanged: false,
             isFirstRun: isFirstRun
@@ -246,26 +326,32 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
         // 处理错误
         if (error) {
             result.message = `请求错误: ${error}`;
-            console.log(`商品 ${product.name} ${result.message}`);
+            console.log(`商品链接 ${url} ${result.message}`);
         } else if (!data) {
             result.message = "返回内容为空";
-            console.log(`商品 ${product.name} ${result.message}`);
+            console.log(`商品链接 ${url} ${result.message}`);
         } else {
             // 成功获取内容
-            console.log(`商品 ${product.name} 成功获取HTML内容，长度: ${data.length}字符`);
+            console.log(`商品链接 ${url} 成功获取HTML内容，长度: ${data.length}字符`);
             result.success = true;
             
-            // 提取按钮实际文本内容
-            const buttonInfo = extractButtonInfo(data);
-            console.log(`商品 ${product.name} 提取到按钮信息: buttonName=${buttonInfo.buttonName}, buttonText=${buttonInfo.buttonText}`);
+            // 提取按钮实际文本内容和商品名称
+            const extractedInfo = extractButtonInfo(data);
+            console.log(`商品 ${extractedInfo.productName} 提取到按钮信息: buttonName=${extractedInfo.buttonName}, buttonText=${extractedInfo.buttonText}`);
             
-            result.buttonInfo = buttonInfo;
+            result.buttonInfo = {
+                buttonName: extractedInfo.buttonName,
+                buttonText: extractedInfo.buttonText
+            };
+            result.productName = extractedInfo.productName;
             
             // 状态是否变化
-            result.hasChanged = (buttonInfo.buttonName !== lastButtonName || buttonInfo.buttonText !== lastButtonText) && !isFirstRun;
+            result.hasChanged = (extractedInfo.buttonName !== lastButtonName || 
+                                extractedInfo.buttonText !== lastButtonText) && 
+                                !isFirstRun;
             
             // 保存当前状态
-            $persistentStore.write(JSON.stringify(buttonInfo), stateKey);
+            $persistentStore.write(JSON.stringify(extractedInfo), stateKey);
         }
         
         // 添加结果
@@ -277,7 +363,7 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
             finalCallback(allResults);
         } else {
             // 继续检查下一个商品
-            const nextProduct = getConfig().products[index + 1];
+            const nextProduct = getConfig().productLinks[index + 1];
             checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
         }
     });
@@ -286,19 +372,19 @@ function checkSingleProduct(product, allResults, index, totalCount, finalCallbac
 // 主函数 - 检查所有商品
 function checkAllProducts() {
     const config = getConfig();
-    console.log(`开始检查所有商品，共 ${config.products.length} 个商品`);
+    console.log(`开始检查所有商品，共 ${config.productLinks.length} 个商品链接`);
     
     // 如果没有配置商品，显示提示
-    if (!config.products || config.products.length === 0) {
-        console.log("未配置任何商品");
-        $notification.post("配置错误", "未配置任何商品", "请在BoxJS中配置至少一个商品");
+    if (!config.productLinks || config.productLinks.length === 0) {
+        console.log("未配置任何商品链接");
+        $notification.post("配置错误", "未配置任何商品链接", "请在BoxJS中配置至少一个商品链接");
         $done();
         return;
     }
     
     // 检查第一个商品，递归检查所有商品
     const results = [];
-    checkSingleProduct(config.products[0], results, 0, config.products.length, function(allResults) {
+    checkSingleProduct(config.productLinks[0], results, 0, config.productLinks.length, function(allResults) {
         // 所有商品检查完毕，发送通知
         sendSummaryNotification(allResults);
     });
@@ -321,7 +407,7 @@ function sendSummaryNotification(results) {
         
         // 添加变化的商品信息
         changedProducts.forEach((result, index) => {
-            summaryContent += `### ${index + 1}. ${result.name}\n`;
+            summaryContent += `### ${index + 1}. ${result.productName}\n`;
             summaryContent += `- 当前按钮: ${result.buttonInfo.buttonText}\n`;
             summaryContent += `- 检查时间: ${new Date().toLocaleString("zh-CN")}\n\n`;
         });
@@ -334,9 +420,9 @@ function sendSummaryNotification(results) {
     summaryContent += "**所有商品当前状态**\n\n";
     results.forEach((result, index) => {
         if (result.success && result.buttonInfo) {
-            summaryContent += `${index + 1}. ${result.name}: ${result.buttonInfo.buttonText}${result.hasChanged ? " (已变化)" : ""}\n`;
+            summaryContent += `${index + 1}. ${result.productName}: ${result.buttonInfo.buttonText}${result.hasChanged ? " (已变化)" : ""}\n`;
         } else {
-            summaryContent += `${index + 1}. ${result.name}: 检查失败 - ${result.message}\n`;
+            summaryContent += `${index + 1}. ${result.productName || result.url}: 检查失败 - ${result.message}\n`;
         }
     });
     
@@ -347,9 +433,9 @@ function sendSummaryNotification(results) {
             changedProducts.forEach(result => {
                 $notification.post(
                     "⚠️ 商品状态已变化",
-                    `${result.name}`,
+                    `${result.productName}`,
                     `按钮文本: ${result.buttonInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
-                    { url: config.products.find(p => p.name === result.name)?.url || "" }
+                    { url: result.url }
                 );
             });
         }
