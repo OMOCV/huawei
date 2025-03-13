@@ -1,6 +1,6 @@
-// 华为商城商品状态监控脚本 - 修复版
+// 华为商城商品状态监控脚本 - 增强通知版
 // 支持通过简单文本配置多个商品监控：一行一个链接
-// 修复BoxJS读取配置问题
+// 增强通知显示，包含价格变化、状态变化等更丰富信息
 
 // 解析链接文本为结构化数据
 function parseLinksText(text) {
@@ -190,18 +190,38 @@ function sendPushDeerNotification(title, content, callback) {
     });
 }
 
-// 提取按钮实际文本内容
-function extractButtonInfo(html) {
+// 提取页面信息 - 增强版，包含价格提取
+function extractPageInfo(html) {
     // 默认值
     let buttonName = "";
     let buttonText = "";
     let productName = "未知商品";
+    let price = 0;
+    let originalPrice = 0;
     
     try {
         // 尝试提取商品名称
         const titleMatch = html.match(/<title>(.*?)<\/title>/);
         if (titleMatch && titleMatch[1]) {
             productName = titleMatch[1].replace(/[\_\-\|].*$/, "").trim();
+        }
+        
+        // 尝试提取价格信息 - 从HTML中搜索价格相关信息
+        const priceMatches = html.match(/["']price["']\s*:\s*(\d+(\.\d+)?)/);
+        const originalPriceMatches = html.match(/["']originPrice["']\s*:\s*(\d+(\.\d+)?)/);
+        const salePriceMatches = html.match(/["']salePrice["']\s*:\s*(\d+(\.\d+)?)/);
+        
+        if (priceMatches && priceMatches[1]) {
+            price = parseFloat(priceMatches[1]);
+        }
+        
+        if (originalPriceMatches && originalPriceMatches[1]) {
+            originalPrice = parseFloat(originalPriceMatches[1]);
+        } else if (salePriceMatches && salePriceMatches[1]) {
+            // 如果没有originalPrice但有salePrice，使用salePrice作为当前价格
+            if (price === 0) {
+                price = parseFloat(salePriceMatches[1]);
+            }
         }
         
         // 方法1: 尝试从NEXT_DATA脚本中提取JSON数据
@@ -225,6 +245,14 @@ function extractButtonInfo(html) {
                             productName = product.name;
                         } else if (product.sbomName) {
                             productName = product.sbomName;
+                        }
+                        
+                        // 提取价格信息
+                        if (product.price) {
+                            price = parseFloat(product.price);
+                        }
+                        if (product.originPrice) {
+                            originalPrice = parseFloat(product.originPrice);
                         }
                     }
                 }
@@ -270,13 +298,15 @@ function extractButtonInfo(html) {
             }
         }
     } catch (error) {
-        console.log("提取按钮信息失败: " + error);
+        console.log("提取页面信息失败: " + error);
     }
     
     return {
         buttonName: buttonName || "未知",
         buttonText: buttonText || "未知状态",
-        productName: productName
+        productName: productName,
+        price: price,
+        originalPrice: originalPrice
     };
 }
 
@@ -291,7 +321,11 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
             success: false,
             message: "已禁用",
             productName: "已禁用",
-            buttonInfo: { buttonName: "已禁用", buttonText: "已禁用" }
+            buttonInfo: { buttonName: "已禁用", buttonText: "已禁用" },
+            price: 0,
+            originalPrice: 0,
+            priceChanged: false,
+            priceDiff: 0
         });
         
         // 检查是否完成所有商品
@@ -320,6 +354,8 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
     let lastButtonName = "";
     let lastButtonText = "";
     let lastProductName = "";
+    let lastPrice = 0;
+    let lastOriginalPrice = 0;
     let isFirstRun = true;
     
     if (lastState) {
@@ -328,6 +364,8 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
             lastButtonName = lastStateObj.buttonName || "";
             lastButtonText = lastStateObj.buttonText || "";
             lastProductName = lastStateObj.productName || "";
+            lastPrice = lastStateObj.price || 0;
+            lastOriginalPrice = lastStateObj.originalPrice || 0;
             isFirstRun = false;
         } catch (e) {
             console.log(`解析上次状态失败: ${e}`);
@@ -349,7 +387,11 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
             message: "",
             productName: lastProductName || "未知商品",
             buttonInfo: null,
+            price: lastPrice,
+            originalPrice: lastOriginalPrice,
             hasChanged: false,
+            priceChanged: false,
+            priceDiff: 0,
             isFirstRun: isFirstRun
         };
         
@@ -365,20 +407,28 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
             console.log(`商品链接 ${url} 成功获取HTML内容，长度: ${data.length}字符`);
             result.success = true;
             
-            // 提取按钮实际文本内容和商品名称
-            const extractedInfo = extractButtonInfo(data);
-            console.log(`商品 ${extractedInfo.productName} 提取到按钮信息: buttonName=${extractedInfo.buttonName}, buttonText=${extractedInfo.buttonText}`);
+            // 提取页面信息 - 包含价格
+            const extractedInfo = extractPageInfo(data);
+            console.log(`商品 ${extractedInfo.productName} 提取到信息: buttonName=${extractedInfo.buttonName}, buttonText=${extractedInfo.buttonText}, price=${extractedInfo.price}`);
             
             result.buttonInfo = {
                 buttonName: extractedInfo.buttonName,
                 buttonText: extractedInfo.buttonText
             };
             result.productName = extractedInfo.productName;
+            result.price = extractedInfo.price;
+            result.originalPrice = extractedInfo.originalPrice;
             
             // 状态是否变化
             result.hasChanged = (extractedInfo.buttonName !== lastButtonName || 
                                 extractedInfo.buttonText !== lastButtonText) && 
                                 !isFirstRun;
+            
+            // 价格是否变化
+            if (lastPrice > 0 && extractedInfo.price > 0) {
+                result.priceChanged = (lastPrice !== extractedInfo.price);
+                result.priceDiff = extractedInfo.price - lastPrice;
+            }
             
             // 保存当前状态
             $persistentStore.write(JSON.stringify(extractedInfo), stateKey);
@@ -420,39 +470,81 @@ function checkAllProducts() {
     });
 }
 
-// 发送汇总通知
+// 格式化价格显示
+function formatPrice(price) {
+    if (!price || price === 0) return "未知";
+    return price.toFixed(2) + "元";
+}
+
+// 格式化价格变化
+function formatPriceChange(diff) {
+    if (diff === 0) return "无变化";
+    return diff > 0 ? `↑涨价${diff.toFixed(2)}元` : `↓降价${Math.abs(diff).toFixed(2)}元`;
+}
+
+// 发送汇总通知 - 增强版
 function sendSummaryNotification(results) {
     const config = getConfig();
     
-    // 检查是否有状态变化的商品
-    const changedProducts = results.filter(r => r.success && r.buttonInfo && r.hasChanged);
+    // 检查是否有状态或价格变化的商品
+    const changedProducts = results.filter(r => r.success && (r.hasChanged || r.priceChanged));
     
     // 构建汇总消息
     let summaryTitle = "";
     let summaryContent = "";
     
     if (changedProducts.length > 0) {
-        summaryTitle = `⚠️ 检测到${changedProducts.length}个商品状态变化`;
-        summaryContent = "**商品状态变化通知**\n\n";
+        summaryTitle = `⚠️ 检测到${changedProducts.length}个商品变化`;
+        summaryContent = "## 🔔 商品变化通知\n\n";
         
         // 添加变化的商品信息
         changedProducts.forEach((result, index) => {
-            summaryContent += `### ${index + 1}. ${result.productName}\n`;
-            summaryContent += `- 当前按钮: ${result.buttonInfo.buttonText}\n`;
-            summaryContent += `- 检查时间: ${new Date().toLocaleString("zh-CN")}\n\n`;
+            summaryContent += `### ${index + 1}. ${result.productName}\n\n`;
+            
+            if (result.hasChanged) {
+                summaryContent += `- **按钮状态**: ${result.buttonInfo.buttonText}\n`;
+                summaryContent += `- **状态变化**: ✅ 已变化，原状态: ${lastButtonText || "未知"}\n`;
+            }
+            
+            if (result.priceChanged) {
+                summaryContent += `- **当前价格**: ${formatPrice(result.price)}\n`;
+                summaryContent += `- **价格变化**: ${formatPriceChange(result.priceDiff)}\n`;
+            }
+            
+            summaryContent += `- **检查时间**: ${new Date().toLocaleString("zh-CN")}\n\n`;
         });
     } else {
         summaryTitle = "✅ 商品状态检查完成";
-        summaryContent = "**商品状态检查汇总**\n\n";
+        summaryContent = "## 📊 商品状态检查汇总\n\n";
     }
     
-    // 添加所有商品的当前状态
-    summaryContent += "**所有商品当前状态**\n\n";
+    // 添加所有商品的当前状态 - 使用树状结构改进排版
+    summaryContent += "## 📋 所有商品当前状态\n\n";
+    
     results.forEach((result, index) => {
         if (result.success && result.buttonInfo) {
-            summaryContent += `${index + 1}. ${result.productName}: ${result.buttonInfo.buttonText}${result.hasChanged ? " (已变化)" : ""}\n`;
+            // 显示序号和商品名，状态变化时添加标记
+            summaryContent += `### ${index + 1}. ${result.productName}${result.hasChanged ? " ⚠️" : ""}\n\n`;
+            
+            // 树形结构显示详细信息
+            summaryContent += `- **按钮状态**: ${result.buttonInfo.buttonText}\n`;
+            
+            // 价格信息，如果有价格则显示
+            if (result.price > 0) {
+                summaryContent += `- **商品价格**: ${formatPrice(result.price)}`;
+                
+                // 如果价格有变化，显示变化情况
+                if (result.priceChanged) {
+                    summaryContent += ` (${formatPriceChange(result.priceDiff)})`;
+                }
+                summaryContent += "\n";
+            }
+            
+            // 添加空行分隔不同商品
+            summaryContent += "\n";
         } else {
-            summaryContent += `${index + 1}. ${result.productName || result.url}: 检查失败 - ${result.message}\n`;
+            summaryContent += `### ${index + 1}. ${result.productName || result.url}\n\n`;
+            summaryContent += `- **状态**: 检查失败 - ${result.message}\n\n`;
         }
     });
     
@@ -461,10 +553,18 @@ function sendSummaryNotification(results) {
         // 对于变化的商品，发送弹窗通知
         if (changedProducts.length > 0) {
             changedProducts.forEach(result => {
+                let notificationBody = `按钮文本: ${result.buttonInfo.buttonText}`;
+                
+                if (result.priceChanged) {
+                    notificationBody += `\n价格: ${formatPrice(result.price)} (${formatPriceChange(result.priceDiff)})`;
+                }
+                
+                notificationBody += `\n检查时间: ${new Date().toLocaleString("zh-CN")}`;
+                
                 $notification.post(
                     "⚠️ 商品状态已变化",
                     `${result.productName}`,
-                    `按钮文本: ${result.buttonInfo.buttonText}\n检查时间: ${new Date().toLocaleString("zh-CN")}`,
+                    notificationBody,
                     { url: result.url }
                 );
             });
