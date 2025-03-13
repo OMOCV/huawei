@@ -2,7 +2,7 @@
   "id": "vmall.app.sub",
   "name": "华为商城监控",
   "author": "@Claude",
-  "icon": "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+  "icon": "https://m.vmall.com/images/favicon-v3.ico",
   "repo": "",
   "apps": [
     {
@@ -11,7 +11,7 @@
       "descs_html": [
         "基于BoxJS的华为商城商品状态监控工具",
         "支持监控多个商品，定时检查并通知状态变化",
-        "增强版: 支持价格变动监控、改进通知排版"
+        "增强版: 支持价格变动监控、详细显示原价和优惠价、改进通知排版"
       ],
       "keys": [
         "linksText",
@@ -68,7 +68,7 @@
       "scripts": [
         {
           "name": "执行商品状态检查",
-          "script": "vmall-enhanced.js"
+          "script": "vmall-complete.js"
         },
         {
           "name": "测试PushDeer配置",
@@ -79,8 +79,8 @@
       "author": "@Claude",
       "repo": "",
       "icons": [
-        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
-        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+        "https://m.vmall.com/images/favicon-v3.ico",
+        "https://m.vmall.com/images/favicon-v3.ico"
       ]
     }
   ]
