@@ -11,7 +11,7 @@
       "descs_html": [
         "基于BoxJS的华为商城商品状态监控工具",
         "支持监控多个商品，定时检查并通知状态变化",
-        "只需提供华为商城链接即可，自动提取商品信息"
+        "增强版: 支持价格变动监控、改进通知排版"
       ],
       "keys": [
         "linksText",
@@ -68,7 +68,12 @@
       "scripts": [
         {
           "name": "执行商品状态检查",
-          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js"
+          "script": "vmall-enhanced.js"
+        },
+        {
+          "name": "测试PushDeer配置",
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
+          "argument": "test"
         }
       ],
       "author": "@Claude",
