@@ -1,9 +1,8 @@
-// 华为商城商品状态监控脚本 - 增强通知版
-// 支持通过简单文本配置多个商品监控：一行一个链接
-// 增强通知显示，包含价格变化、状态变化等更丰富信息
-// 优化价格提取逻辑，修复原价和优惠价显示问题
+// 华为商城商品状态监控脚本 - 完整增强版
+// 支持多商品独立配置、价格变化通知、优惠价显示等增强功能
+// 更新日期: 2025-03-14
 
-// 解析链接文本为结构化数据
+// 解析链接文本为结构化数据 (兼容旧版配置)
 function parseLinksText(text) {
     if (!text) return [];
     
@@ -75,14 +74,54 @@ function getPushDeerKey() {
     return "";
 }
 
-// 获取配置
+// 获取配置 - 支持新的BoxJS单独商品输入框
 function getConfig() {
-    // 尝试读取链接文本
-    const linksText = $persistentStore.read("vmall.linksText") || 
-                      $persistentStore.read("linksText") || 
-                      "https://m.vmall.com/product/10086989076790.html [true]";
+    // 尝试从新的单独输入框读取商品配置
+    const productLinks = [];
     
-    console.log(`读取到的链接文本: ${linksText ? '有内容' : '未找到'}`);
+    // 支持最多5个商品
+    for (let i = 1; i <= 5; i++) {
+        const urlKey = `product${i}Url`;
+        const enabledKey = `product${i}Enabled`;
+        
+        // 尝试读取URL，同时支持带命名空间和不带命名空间的键名
+        const url = $persistentStore.read(`vmall.${urlKey}`) || 
+                    $persistentStore.read(urlKey);
+        
+        // 尝试读取启用状态，同时支持带命名空间和不带命名空间的键名
+        let enabled = true; // 默认启用
+        
+        const enabledStr = $persistentStore.read(`vmall.${enabledKey}`) || 
+                          $persistentStore.read(enabledKey);
+        
+        // 如果明确设置为false，则禁用
+        if (enabledStr === "false") {
+            enabled = false;
+        }
+        
+        // 如果有URL，添加到商品链接列表
+        if (url && url.trim()) {
+            productLinks.push({
+                url: url.trim(),
+                enabled: enabled
+            });
+        }
+    }
+    
+    // 如果没有读取到任何商品链接，尝试从旧的linksText配置读取
+    if (productLinks.length === 0) {
+        const linksText = $persistentStore.read("vmall.linksText") || 
+                          $persistentStore.read("linksText") || 
+                          "https://m.vmall.com/product/10086989076790.html [true]";
+        
+        console.log(`未从新配置读取到商品链接，尝试从旧配置读取: ${linksText ? '有内容' : '未找到'}`);
+        
+        // 使用旧的解析函数解析链接文本
+        const oldLinks = parseLinksText(linksText);
+        productLinks.push(...oldLinks);
+    }
+    
+    console.log(`共读取到 ${productLinks.length} 个商品链接`);
     
     // 尝试读取其他配置
     const pushDeerUrl = $persistentStore.read("vmall.pushDeerUrl") || 
@@ -95,15 +134,11 @@ function getConfig() {
     
     const notifyOnlyOnChange = ($persistentStore.read("vmall.notifyOnlyOnChange") === "true") || 
                                ($persistentStore.read("notifyOnlyOnChange") === "true") || 
-                               true;
+                               false;
     
     const debug = ($persistentStore.read("vmall.debug") === "true") || 
                   ($persistentStore.read("debug") === "true") || 
                   false;
-    
-    // 解析链接文本
-    const productLinks = parseLinksText(linksText);
-    console.log(`解析出 ${productLinks.length} 个商品链接`);
     
     return {
         productLinks: productLinks,
@@ -571,14 +606,15 @@ function sendSummaryNotification(results) {
             if (result.priceChanged) {
                 summaryContent += `- **当前价格**: ${formatPrice(result.price)}\n`;
                 
-                // 显示优惠价信息（如果有）
-                if (result.promoPrice > 0 && result.promoPrice < result.originalPrice) {
-                    summaryContent += `- **优惠价**: ${formatPrice(result.promoPrice)}\n`;
+                // 显示原价信息（无论是否等于当前价格）
+                if (result.originalPrice > 0) {
+                    summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
                 }
                 
-                // 显示原价信息（如果有且不等于当前价格）
-                if (result.originalPrice > 0 && result.originalPrice !== result.price) {
-                    summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
+                // 显示优惠价信息（如果有）并强调降价额度
+                if (result.promoPrice > 0 && result.promoPrice < result.originalPrice) {
+                    const priceDrop = result.originalPrice - result.promoPrice;
+                    summaryContent += `- **优惠价**: ${formatPrice(result.promoPrice)} (↓降价${priceDrop.toFixed(2)}元)\n`;
                 }
                 
                 summaryContent += `- **价格变化**: ${formatPriceChange(result.priceDiff)}\n`;
@@ -597,14 +633,24 @@ function sendSummaryNotification(results) {
     results.forEach((result, index) => {
         if (result.success && result.buttonInfo) {
             // 显示序号和商品名，状态变化时添加标记
-            summaryContent += `### ${index + 1}. ${result.productName}${result.hasChanged ? " ⚠️" : ""}\n\n`;
+            summaryContent += `### ${index + 1}. ${result.productName}${result.hasChanged || result.priceChanged ? " ⚠️" : ""}\n\n`;
             
             // 树形结构显示详细信息
             summaryContent += `- **按钮状态**: ${result.buttonInfo.buttonText}\n`;
             
             // 价格信息，如果有价格则显示
             if (result.price > 0) {
-                summaryContent += `- **商品价格**: ${formatPrice(result.price)}`;
+                // 检查是否为促销价
+                const isPromo = result.promoPrice > 0 && result.promoPrice < result.originalPrice;
+                
+                if (isPromo) {
+                    // 如果是促销，显示促销价作为当前价格，并在括号中显示降价额度
+                    const priceDrop = result.originalPrice - result.promoPrice;
+                    summaryContent += `- **商品价格**: ${formatPrice(result.price)} (↓降价${priceDrop.toFixed(2)}元)`;
+                } else {
+                    // 如果不是促销，只显示普通价格
+                    summaryContent += `- **商品价格**: ${formatPrice(result.price)}`;
+                }
                 
                 // 如果价格有变化，显示变化情况
                 if (result.priceChanged) {
@@ -612,13 +658,8 @@ function sendSummaryNotification(results) {
                 }
                 summaryContent += "\n";
                 
-                // 显示优惠价信息（如果有）
-                if (result.promoPrice > 0 && result.promoPrice < result.originalPrice) {
-                    summaryContent += `- **优惠价**: ${formatPrice(result.promoPrice)}\n`;
-                }
-                
-                // 显示原价信息（如果有且不等于当前价格）
-                if (result.originalPrice > 0 && result.originalPrice !== result.price) {
+                // 显示原价信息（无论是否有促销，都显示原价）
+                if (result.originalPrice > 0 && isPromo) {
                     summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
                 }
             }
@@ -633,28 +674,56 @@ function sendSummaryNotification(results) {
     
     // 发送PushDeer通知
     sendPushDeerNotification(summaryTitle, summaryContent, function() {
-        // 对于变化的商品，发送弹窗通知
+        // 对于变化的商品，发送弹窗通知 - 无论是状态变化还是价格变化
         if (changedProducts.length > 0) {
             changedProducts.forEach(result => {
-                let notificationBody = `按钮文本: ${result.buttonInfo.buttonText}`;
+                // 准备弹窗通知内容
+                let title = "";
+                let notificationBody = "";
                 
-                if (result.priceChanged) {
-                    notificationBody += `\n价格: ${formatPrice(result.price)} (${formatPriceChange(result.priceDiff)})`;
+                // 根据变化类型设置不同的标题
+                if (result.hasChanged && result.priceChanged) {
+                    title = "⚠️ 商品状态和价格已变化";
+                } else if (result.hasChanged) {
+                    title = "⚠️ 商品状态已变化";
+                } else if (result.priceChanged) {
+                    title = "💰 商品价格已变化";
+                }
+                
+                // 添加按钮状态信息
+                if (result.hasChanged) {
+                    notificationBody = `按钮状态: ${result.buttonInfo.buttonText}\n`;
+                }
+                
+                // 添加价格信息
+                if (result.priceChanged || result.price > 0) {
+                    // 检查是否为促销价
+                    const isPromo = result.promoPrice > 0 && result.promoPrice < result.originalPrice;
                     
-                    // 在弹窗通知中也添加优惠价和原价显示
-                    if (result.promoPrice > 0 && result.promoPrice < result.originalPrice) {
-                        notificationBody += `\n优惠价: ${formatPrice(result.promoPrice)}`;
+                    if (isPromo) {
+                        // 显示促销价格和降价额度
+                        const priceDrop = result.originalPrice - result.promoPrice;
+                        notificationBody += `当前价格: ${formatPrice(result.price)} (↓降价${priceDrop.toFixed(2)}元)`;
+                    } else {
+                        notificationBody += `当前价格: ${formatPrice(result.price)}`;
                     }
                     
-                    if (result.originalPrice > 0 && result.originalPrice !== result.price) {
-                        notificationBody += `\n原价: ${formatPrice(result.originalPrice)}`;
+                    // 如果价格有变化，显示变化情况
+                    if (result.priceChanged) {
+                        notificationBody += ` ${formatPriceChange(result.priceDiff)}`;
+                    }
+                    notificationBody += "\n";
+                    
+                    // 显示原价信息（在有促销时显示）
+                    if (result.originalPrice > 0 && isPromo) {
+                        notificationBody += `原价: ${formatPrice(result.originalPrice)}\n`;
                     }
                 }
                 
-                notificationBody += `\n检查时间: ${new Date().toLocaleString("zh-CN")}`;
+                notificationBody += `检查时间: ${new Date().toLocaleString("zh-CN")}`;
                 
                 $notification.post(
-                    "⚠️ 商品状态已变化",
+                    title,
                     `${result.productName}`,
                     notificationBody,
                     { url: result.url }
