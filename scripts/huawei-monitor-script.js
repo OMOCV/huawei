@@ -1,6 +1,7 @@
 // 华为商城商品状态监控脚本 - 增强通知版
 // 支持通过简单文本配置多个商品监控：一行一个链接
 // 增强通知显示，包含价格变化、状态变化等更丰富信息
+// 优化价格提取逻辑，修复原价和优惠价显示问题
 
 // 解析链接文本为结构化数据
 function parseLinksText(text) {
@@ -190,15 +191,15 @@ function sendPushDeerNotification(title, content, callback) {
     });
 }
 
-// 提取页面信息 - 增强版，包含价格提取
+// 提取页面信息 - 重新优化版，修复价格提取问题
 function extractPageInfo(html) {
     // 默认值
     let buttonName = "";
     let buttonText = "";
     let productName = "未知商品";
-    let price = 0;           // 当前展示价格（可能是优惠价）
+    let price = 0;           // 当前展示价格
     let originalPrice = 0;   // 原价
-    let promoPrice = 0;      // 优惠价
+    let promoPrice = 0;      // 优惠价/促销价
 
     try {
         // 尝试提取商品名称
@@ -207,64 +208,70 @@ function extractPageInfo(html) {
             productName = titleMatch[1].replace(/[\_\-\|].*$/, "").trim();
         }
         
-        // 尝试提取价格信息 - 从HTML中搜索价格相关信息
-        // 1. 尝试匹配JSON格式的价格
-        const priceMatches = html.match(/["']price["']\s*:\s*(\d+(\.\d+)?)/);
-        const originalPriceMatches = html.match(/["']originPrice["']\s*:\s*(\d+(\.\d+)?)/);
-        const salePriceMatches = html.match(/["']salePrice["']\s*:\s*(\d+(\.\d+)?)/);
-        const promoPriceMatches = html.match(/["']promoPrice["']\s*:\s*(\d+(\.\d+)?)/); // 添加优惠价匹配
+        // ===== 价格提取逻辑（完全重写）=====
         
-        // 2. 尝试匹配带¥符号的价格格式
-        const yenPriceMatches = html.match(/¥\s*(\d+(\.\d+)?)/g);
+        // 1. 尝试匹配JSON中的promoPrice和促销信息
+        const promoPriceMatch = html.match(/["']promoPrice["']\s*:\s*(\d+(\.\d+)?)/);
+        const promoPriceLabelMatch = html.match(/["']promoLabel["']\s*:\s*["']([^"']+)["']/);
         
-        // 处理带¥符号的价格 - 通常第一个是当前价格，第二个是原价
-        if (yenPriceMatches && yenPriceMatches.length >= 1) {
-            // 提取¥符号后的数字部分
-            const extractedPrices = yenPriceMatches.map(p => 
-                parseFloat(p.replace(/¥\s*/, ""))
-            );
-            
-            console.log(`找到带¥符号的价格: ${JSON.stringify(extractedPrices)}`);
-            
-            // 如果有多个价格，第一个通常是当前展示价格（可能是优惠价），第二个通常是原价
-            if (extractedPrices.length >= 2) {
-                // 当两个价格不同时，较低的价格通常是优惠价
-                if (extractedPrices[0] !== extractedPrices[1]) {
-                    const minPrice = Math.min(extractedPrices[0], extractedPrices[1]);
-                    const maxPrice = Math.max(extractedPrices[0], extractedPrices[1]);
-                    
-                    promoPrice = minPrice;
-                    originalPrice = maxPrice;
-                    price = minPrice; // 当前显示价格为较低价格
-                }
-            } else if (extractedPrices.length == 1) {
-                // 只有一个价格时，设为当前价格
-                price = extractedPrices[0];
-            }
+        if (promoPriceMatch && promoPriceMatch[1]) {
+            promoPrice = parseFloat(promoPriceMatch[1]);
+            console.log(`找到促销价格: ${promoPrice}`);
         }
         
-        // 处理JSON格式的价格提取结果
+        // 2. 尝试匹配原价信息
+        const priceMatches = html.match(/["']price["']\s*:\s*(\d+(\.\d+)?)/);
+        const originalPriceMatches = html.match(/["']originPrice["']\s*:\s*(\d+(\.\d+)?)/);
+        
+        // 查找价格相关字段
         if (priceMatches && priceMatches[1]) {
             price = parseFloat(priceMatches[1]);
+            console.log(`找到price字段: ${price}`);
         }
         
         if (originalPriceMatches && originalPriceMatches[1]) {
             originalPrice = parseFloat(originalPriceMatches[1]);
+            console.log(`找到originPrice字段: ${originalPrice}`);
         }
         
-        if (promoPriceMatches && promoPriceMatches[1]) {
-            promoPrice = parseFloat(promoPriceMatches[1]);
-            // 如果有优惠价，优先使用优惠价作为当前价格
-            price = promoPrice;
-        } else if (salePriceMatches && salePriceMatches[1]) {
-            // 如果没有promoPrice但有salePrice，使用salePrice
-            promoPrice = parseFloat(salePriceMatches[1]);
-            if (price === 0) {
-                price = promoPrice;
+        // 3. 尝试匹配带¥符号的价格
+        // 通常HTML中会显示¥XXXX（原价，带删除线）和¥XXXX（当前售价）
+        const yenPriceMatches = html.match(/¥\s*(\d+(\.\d+)?)/g);
+        
+        if (yenPriceMatches && yenPriceMatches.length > 0) {
+            // 提取所有带¥的价格并转换为数字
+            const allPrices = yenPriceMatches.map(p => 
+                parseFloat(p.replace(/¥\s*/, ""))
+            );
+            
+            console.log(`找到所有带¥符号的价格: ${JSON.stringify(allPrices)}`);
+            
+            // 找出最大值和最小值
+            if (allPrices.length >= 2) {
+                // 对价格进行排序
+                allPrices.sort((a, b) => b - a);
+                
+                // 如果未设置原价，使用最大值作为原价
+                if (originalPrice === 0) {
+                    originalPrice = allPrices[0];
+                    console.log(`使用最大的带¥价格作为原价: ${originalPrice}`);
+                }
+                
+                // 如果未设置促销价，使用次大值作为促销价
+                if (promoPrice === 0 && allPrices.length >= 2) {
+                    promoPrice = allPrices[1];
+                    console.log(`使用次大的带¥价格作为促销价: ${promoPrice}`);
+                }
+            } else if (allPrices.length === 1) {
+                // 只有一个价格时，视情况设置
+                if (price === 0) {
+                    price = allPrices[0];
+                    console.log(`仅有一个带¥价格，设为当前价格: ${price}`);
+                }
             }
         }
         
-        // 方法1: 尝试从NEXT_DATA脚本中提取JSON数据
+        // 4. 尝试从NEXT_DATA脚本提取完整JSON数据
         const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
         if (nextDataMatch && nextDataMatch[1]) {
             try {
@@ -275,6 +282,8 @@ function extractPageInfo(html) {
                     const products = Object.values(mainData.current.base);
                     if (products && products.length > 0) {
                         const product = products[0];
+                        
+                        // 提取按钮信息
                         if (product.buttonInfo && product.buttonInfo.buttonName) {
                             buttonName = product.buttonInfo.buttonName;
                         }
@@ -290,15 +299,15 @@ function extractPageInfo(html) {
                         // 提取价格信息
                         if (product.price) {
                             price = parseFloat(product.price);
+                            console.log(`从JSON中提取到price: ${price}`);
                         }
                         if (product.originPrice) {
                             originalPrice = parseFloat(product.originPrice);
+                            console.log(`从JSON中提取到originPrice: ${originalPrice}`);
                         }
-                        // 添加promoPrice的提取
                         if (product.promoPrice) {
                             promoPrice = parseFloat(product.promoPrice);
-                            // 如果有优惠价，优先使用优惠价作为当前价格
-                            price = promoPrice;
+                            console.log(`从JSON中提取到promoPrice: ${promoPrice}`);
                         }
                     }
                 }
@@ -307,7 +316,7 @@ function extractPageInfo(html) {
             }
         }
         
-        // 如果上面的方法失败，尝试正则表达式直接匹配
+        // 5. 如果上面的方法失败，尝试正则表达式直接匹配按钮信息
         if (!buttonName && !buttonText) {
             const buttonNameMatch = html.match(/"buttonName"[\s]*:[\s]*"([^"]+)"/);
             const buttonTextMatch = html.match(/"buttonText"[\s]*:[\s]*"([^"]+)"/);
@@ -321,7 +330,7 @@ function extractPageInfo(html) {
             }
         }
         
-        // 如果仍然无法获取，检查页面中是否存在一些常见状态
+        // 6. 如果仍然无法获取按钮信息，检查页面中是否存在一些常见状态
         if (!buttonName && !buttonText) {
             if (html.includes("加入购物车")) {
                 buttonText = "加入购物车";
@@ -343,6 +352,27 @@ function extractPageInfo(html) {
                 buttonName = "coming_soon";
             }
         }
+        
+        // ===== 价格合理性校验 =====
+        
+        // 设置当前价格的优先级：促销价 > 普通价格
+        if (promoPrice > 0) {
+            price = promoPrice;
+        }
+        
+        // 确保原价不低于当前价格
+        if (originalPrice > 0 && price > 0 && originalPrice < price) {
+            console.log(`原价(${originalPrice})低于当前价格(${price})，不合理，调整原价为当前价格`);
+            originalPrice = price;
+        }
+        
+        // 如果还是没有原价，但有价格，则设置原价等于价格
+        if (originalPrice === 0 && price > 0) {
+            originalPrice = price;
+        }
+        
+        console.log(`最终价格信息 - 当前价格: ${price}, 原价: ${originalPrice}, 促销价: ${promoPrice}`);
+        
     } catch (error) {
         console.log("提取页面信息失败: " + error);
     }
