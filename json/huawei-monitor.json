@@ -2,7 +2,7 @@
   "id": "vmall.app.sub",
   "name": "华为商城监控",
   "author": "@Claude",
-  "icon": "https://m.vmall.com/images/favicon-v3.ico",
+  "icon": "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
   "repo": "",
   "apps": [
     {
@@ -11,10 +11,19 @@
       "descs_html": [
         "基于BoxJS的华为商城商品状态监控工具",
         "支持监控多个商品，定时检查并通知状态变化",
-        "增强版: 支持价格变动监控、详细显示原价和优惠价、改进通知排版"
+        "增强版: 支持价格变动监控、改进通知排版"
       ],
       "keys": [
-        "linksText",
+        "product1Url",
+        "product1Enabled",
+        "product2Url",
+        "product2Enabled",
+        "product3Url",
+        "product3Enabled",
+        "product4Url",
+        "product4Enabled",
+        "product5Url",
+        "product5Enabled",
         "pushDeerKey",
         "pushDeerUrl",
         "checkInterval",
@@ -23,11 +32,88 @@
       ],
       "settings": [
         {
-          "id": "linksText",
-          "name": "监控商品链接",
-          "val": "https://m.vmall.com/product/10086989076790.html [true]",
-          "type": "textarea",
-          "desc": "要监控的商品链接，一行一个，在链接后面添加 [true] 或 [false] 控制启用/禁用，不添加默认为启用<br><br>示例：<br>https://m.vmall.com/product/10086989076790.html [true]<br>https://m.vmall.com/product/comdetail/index.html?prdId=10086989076790 [false]"
+          "id": "productHeader",
+          "name": "📱 监控商品配置",
+          "val": "",
+          "type": "text",
+          "desc": "为每个商品配置单独的监控链接和启用状态"
+        },
+        {
+          "id": "product1Url",
+          "name": "商品1链接",
+          "val": "https://m.vmall.com/product/10086989076790.html",
+          "type": "text",
+          "desc": "商品1的华为商城链接"
+        },
+        {
+          "id": "product1Enabled",
+          "name": "商品1启用",
+          "val": true,
+          "type": "boolean",
+          "desc": "是否启用商品1的监控"
+        },
+        {
+          "id": "product2Url",
+          "name": "商品2链接",
+          "val": "",
+          "type": "text",
+          "desc": "商品2的华为商城链接"
+        },
+        {
+          "id": "product2Enabled",
+          "name": "商品2启用",
+          "val": false,
+          "type": "boolean",
+          "desc": "是否启用商品2的监控"
+        },
+        {
+          "id": "product3Url",
+          "name": "商品3链接",
+          "val": "",
+          "type": "text",
+          "desc": "商品3的华为商城链接"
+        },
+        {
+          "id": "product3Enabled",
+          "name": "商品3启用",
+          "val": false,
+          "type": "boolean",
+          "desc": "是否启用商品3的监控"
+        },
+        {
+          "id": "product4Url",
+          "name": "商品4链接",
+          "val": "",
+          "type": "text",
+          "desc": "商品4的华为商城链接"
+        },
+        {
+          "id": "product4Enabled",
+          "name": "商品4启用",
+          "val": false,
+          "type": "boolean",
+          "desc": "是否启用商品4的监控"
+        },
+        {
+          "id": "product5Url",
+          "name": "商品5链接",
+          "val": "",
+          "type": "text",
+          "desc": "商品5的华为商城链接"
+        },
+        {
+          "id": "product5Enabled",
+          "name": "商品5启用",
+          "val": false,
+          "type": "boolean",
+          "desc": "是否启用商品5的监控"
+        },
+        {
+          "id": "notifyHeader",
+          "name": "🔔 通知设置",
+          "val": "",
+          "type": "text",
+          "desc": "配置通知相关选项"
         },
         {
           "id": "pushDeerKey",
@@ -53,9 +139,9 @@
         {
           "id": "notifyOnlyOnChange",
           "name": "仅状态变化时通知",
-          "val": true,
+          "val": false,
           "type": "boolean",
-          "desc": "启用后，仅在商品状态发生变化时发送弹窗通知"
+          "desc": "启用后，仅在商品状态或价格发生变化时发送弹窗通知"
         },
         {
           "id": "debug",
@@ -68,7 +154,7 @@
       "scripts": [
         {
           "name": "执行商品状态检查",
-          "script": "vmall-complete.js"
+          "script": "vmall-enhanced.js"
         },
         {
           "name": "测试PushDeer配置",
@@ -79,8 +165,8 @@
       "author": "@Claude",
       "repo": "",
       "icons": [
-        "https://m.vmall.com/images/favicon-v3.ico",
-        "https://m.vmall.com/images/favicon-v3.ico"
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
       ]
     }
   ]
