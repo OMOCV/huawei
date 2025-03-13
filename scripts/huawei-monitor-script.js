@@ -1,7 +1,6 @@
-// 华为商城商品状态监控脚本 - 最终版
+// 华为商城商品状态监控脚本 - 整合版
 // 支持多商品独立配置、价格变化通知、优惠价显示等增强功能
-// 修复了促销判断和价格显示问题
-// 重点关注¥符号价格提取，精确识别原价
+// 同时处理促销和非促销商品的价格提取
 // 更新日期: 2025-03-14
 
 // 解析链接文本为结构化数据 (兼容旧版配置)
@@ -228,7 +227,7 @@ function sendPushDeerNotification(title, content, callback) {
     });
 }
 
-// 提取页面信息 - 重点关注¥符号价格
+// 提取页面信息 - 支持多种价格形式
 function extractPageInfo(html) {
     // 默认值
     let buttonName = "";
@@ -246,8 +245,56 @@ function extractPageInfo(html) {
             productName = titleMatch[1].replace(/[\_\-\|].*$/, "").trim();
         }
         
-        // ===== 首先提取¥符号价格 =====
-        // 华为商城中，带¥符号的数字通常是原价
+        // ===== 先检测促销标识词 =====
+        // 检查页面是否包含促销相关关键词
+        const promoKeywords = ["促销", "直降", "优惠", "折扣", "减", "省", "特价", "秒杀", "限时", "立省", "立减", "低至"];
+        for (const keyword of promoKeywords) {
+            if (html.includes(keyword)) {
+                console.log(`检测到促销关键词: ${keyword}`);
+                isPromo = true;
+                break;
+            }
+        }
+        
+        // ===== 1. 提取JSON中的价格数据 =====
+        // 优先提取JSON中的价格信息，这对所有情况都适用
+        
+        // 尝试匹配价格相关字段
+        const priceMatches = html.match(/["']price["']\s*:\s*(\d+(\.\d+)?)/);
+        const originalPriceMatches = html.match(/["']originPrice["']\s*:\s*(\d+(\.\d+)?)/);
+        const promoPriceMatches = html.match(/["']promoPrice["']\s*:\s*(\d+(\.\d+)?)/);
+        const promoPriceLabelMatches = html.match(/["']promoLabel["']\s*:\s*["']([^"']+)["']/);
+        
+        // 记录所有提取到的价格信息
+        if (priceMatches && priceMatches[1]) {
+            price = parseFloat(priceMatches[1]);
+            console.log(`找到price字段: ${price}`);
+        }
+        
+        if (originalPriceMatches && originalPriceMatches[1]) {
+            originalPrice = parseFloat(originalPriceMatches[1]);
+            console.log(`找到originPrice字段: ${originalPrice}`);
+            
+            // 如果原价大于当前价格，可能是促销
+            if (originalPrice > 0 && price > 0 && originalPrice > price) {
+                isPromo = true;
+                console.log(`原价(${originalPrice}) > 价格(${price})，判定为促销`);
+            }
+        }
+        
+        if (promoPriceMatches && promoPriceMatches[1]) {
+            promoPrice = parseFloat(promoPriceMatches[1]);
+            console.log(`找到promoPrice字段: ${promoPrice}`);
+            isPromo = true;
+        }
+        
+        if (promoPriceLabelMatches && promoPriceLabelMatches[1]) {
+            console.log(`找到促销标签: ${promoPriceLabelMatches[1]}`);
+            isPromo = true;
+        }
+        
+        // ===== 2. 提取¥符号价格 =====
+        // 如果页面中有带数字的¥符号，说明可能在促销
         const yenPriceMatches = html.match(/¥\s*(\d+(\.\d+)?)/g);
         
         if (yenPriceMatches && yenPriceMatches.length > 0) {
@@ -259,84 +306,52 @@ function extractPageInfo(html) {
             console.log(`找到所有带¥符号的价格: ${JSON.stringify(allPrices)}`);
             
             if (allPrices.length >= 1) {
-                // 第一个带¥符号的价格通常是原价
-                originalPrice = allPrices[0];
-                console.log(`使用第一个带¥价格作为原价: ${originalPrice}`);
-            }
-            
-            // 如果有多个价格，可能存在促销
-            if (allPrices.length >= 2) {
-                isPromo = true;
-                
-                // 如果还没设置促销价，使用第二个价格
-                if (promoPrice === 0) {
-                    promoPrice = allPrices[1];
-                    console.log(`使用第二个带¥价格作为促销价: ${promoPrice}`);
+                // 如果在促销，第一个带¥符号的价格通常是原价
+                if (isPromo) {
+                    // 如果原价还没有设置或者提取到的¥价格更高，使用这个价格作为原价
+                    if (originalPrice === 0 || allPrices[0] > originalPrice) {
+                        originalPrice = allPrices[0];
+                        console.log(`使用¥符号价格${originalPrice}作为原价`);
+                    }
+                } else {
+                    // 如果不在促销，则¥符号价格可能是当前价格
+                    if (price === 0) {
+                        price = allPrices[0];
+                        console.log(`使用¥符号价格${price}作为当前价格`);
+                    }
                 }
             }
-        }
-        
-        // ===== 检测促销标识词 =====
-        // 检查页面是否包含促销相关关键词
-        const promoKeywords = ["促销", "直降", "优惠", "折扣", "减", "省", "特价", "秒杀", "限时", "立省", "立减", "低至"];
-        for (const keyword of promoKeywords) {
-            if (html.includes(keyword)) {
-                console.log(`检测到促销关键词: ${keyword}`);
-                isPromo = true;
-                break;
-            }
-        }
-        
-        // ===== 提取JSON中的价格数据 =====
-        
-        // 1. 尝试匹配JSON中的promoPrice和促销信息
-        const promoPriceMatch = html.match(/["']promoPrice["']\s*:\s*(\d+(\.\d+)?)/);
-        const promoPriceLabelMatch = html.match(/["']promoLabel["']\s*:\s*["']([^"']+)["']/);
-        
-        if (promoPriceMatch && promoPriceMatch[1]) {
-            promoPrice = parseFloat(promoPriceMatch[1]);
-            console.log(`找到促销价格: ${promoPrice}`);
-            isPromo = true;  // 如果有promoPrice字段，明确是促销
             
-            // 设置当前价格为促销价
-            price = promoPrice;
-        }
-        
-        if (promoPriceLabelMatch && promoPriceLabelMatch[1]) {
-            console.log(`找到促销标签: ${promoPriceLabelMatch[1]}`);
-            isPromo = true;  // 如果有促销标签，明确是促销
-        }
-        
-        // 2. 尝试匹配普通价格信息
-        const priceMatches = html.match(/["']price["']\s*:\s*(\d+(\.\d+)?)/);
-        const originalPriceMatches = html.match(/["']originPrice["']\s*:\s*(\d+(\.\d+)?)/);
-        
-        // 查找价格相关字段
-        if (priceMatches && priceMatches[1]) {
-            // 如果还没有设置价格，则设置
-            if (price === 0) {
-                price = parseFloat(priceMatches[1]);
-                console.log(`找到price字段: ${price}`);
+            // 多个¥价格时可能有促销和原价
+            if (allPrices.length >= 2) {
+                if (isPromo && promoPrice === 0) {
+                    // 排序后，通常最大的是原价，次大的是促销价
+                    const sortedPrices = [...allPrices].sort((a, b) => b - a);
+                    if (sortedPrices[0] > sortedPrices[1]) {
+                        if (originalPrice === 0 || sortedPrices[0] > originalPrice) {
+                            originalPrice = sortedPrices[0];
+                        }
+                        if (promoPrice === 0) {
+                            promoPrice = sortedPrices[1];
+                        }
+                        console.log(`从多个¥价格中提取: 原价=${originalPrice}, 促销价=${promoPrice}`);
+                    }
+                }
             }
-        }
-        
-        // 如果JSON中明确有originPrice字段
-        if (originalPriceMatches && originalPriceMatches[1]) {
-            // 如果原价还没有设置，或者JSON中的原价更高，则使用JSON中的原价
-            const jsonOriginalPrice = parseFloat(originalPriceMatches[1]);
-            if (originalPrice === 0 || jsonOriginalPrice > originalPrice) {
-                originalPrice = jsonOriginalPrice;
-                console.log(`找到originPrice字段: ${originalPrice}`);
-            }
+        } else {
+            console.log("页面中未找到带数字的¥符号价格");
             
-            // 如果JSON中的原价与当前价格不同，则可能是促销
-            if (originalPrice > 0 && price > 0 && originalPrice > price) {
-                console.log(`originPrice(${originalPrice}) > price(${price})，判定为促销`);
-                isPromo = true;
+            // 如果没有¥价格，但价格字段有值，可以推断：
+            // 1. 如果不在促销，当前价格就是原价
+            // 2. 如果在促销但没有原价，尝试从其他地方获取
+            
+            if (!isPromo && price > 0 && originalPrice === 0) {
+                originalPrice = price;
+                console.log(`未找到原价，非促销商品使用当前价格作为原价: ${originalPrice}`);
             }
         }
         
-        // 4. 尝试从NEXT_DATA脚本提取完整JSON数据
+        // ===== 3. 从NEXT_DATA脚本提取完整JSON数据 =====
         const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
         if (nextDataMatch && nextDataMatch[1]) {
             try {
@@ -361,7 +376,7 @@ function extractPageInfo(html) {
                             productName = product.sbomName;
                         }
                         
-                        // 提取价格信息 - 但优先使用¥符号提取的价格
+                        // 提取价格信息 - 但优先使用之前提取的价格
                         if (price === 0 && product.price) {
                             price = parseFloat(product.price);
                             console.log(`从JSON中提取到price: ${price}`);
@@ -375,12 +390,6 @@ function extractPageInfo(html) {
                         if (promoPrice === 0 && product.promoPrice) {
                             promoPrice = parseFloat(product.promoPrice);
                             console.log(`从JSON中提取到promoPrice: ${promoPrice}`);
-                            
-                            // 如果还没设置当前价格，用促销价
-                            if (price === 0) {
-                                price = promoPrice;
-                            }
-                            
                             isPromo = true;
                         }
                         
@@ -396,7 +405,7 @@ function extractPageInfo(html) {
             }
         }
         
-        // 5. 如果上面的方法失败，尝试正则表达式直接匹配按钮信息
+        // ===== 4. 提取按钮信息 =====
         if (!buttonName && !buttonText) {
             const buttonNameMatch = html.match(/"buttonName"[\s]*:[\s]*"([^"]+)"/);
             const buttonTextMatch = html.match(/"buttonText"[\s]*:[\s]*"([^"]+)"/);
@@ -410,7 +419,7 @@ function extractPageInfo(html) {
             }
         }
         
-        // 6. 如果仍然无法获取按钮信息，检查页面中是否存在一些常见状态
+        // 常见按钮状态检查
         if (!buttonName && !buttonText) {
             if (html.includes("加入购物车")) {
                 buttonText = "加入购物车";
@@ -433,7 +442,7 @@ function extractPageInfo(html) {
             }
         }
         
-        // ===== 价格合理性校验和调整 =====
+        // ===== 5. 价格合理性校验和调整 =====
         
         // 如果没有设置当前价格但有促销价，使用促销价
         if (price === 0 && promoPrice > 0) {
@@ -448,6 +457,7 @@ function extractPageInfo(html) {
         // 如果原价没有设置但有当前价格，且没有促销迹象，将原价设为当前价格
         if (originalPrice === 0 && price > 0 && !isPromo) {
             originalPrice = price;
+            console.log(`非促销商品，将原价设置为当前价格: ${originalPrice}`);
         }
         
         // 如果在促销但没有原价，将原价设为当前价格的105%（估算）
@@ -462,9 +472,10 @@ function extractPageInfo(html) {
             console.log(`原价(${originalPrice})低于当前价格(${price})，调整原价为当前价格的105%: ${originalPrice}`);
         }
         
-        // 确保promoPrice已设置（对于华为商城，几乎所有商品都在促销）
+        // 确保promoPrice已设置（对于促销商品）
         if (isPromo && promoPrice === 0) {
             promoPrice = price;
+            console.log(`促销中但未设置促销价，使用当前价格作为促销价: ${promoPrice}`);
         }
         
         console.log(`最终价格信息 - 当前价格: ${price}, 原价: ${originalPrice}, 促销价: ${promoPrice}, 是否促销: ${isPromo}`);
