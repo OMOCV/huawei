@@ -485,7 +485,7 @@ function extractPageInfo(html) {
             console.log(`原价(${originalPrice})低于当前价格(${price})，调整原价为当前价格的105%: ${originalPrice}`);
         }
         
-        // 确保promoPrice已设置（对于华为商城，几乎所有商品都在促销）
+        // 确保promoPrice已设置（仅对于促销商品）
         if (isPromo && promoPrice === 0) {
             promoPrice = price;
         }
@@ -651,12 +651,4 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
             finalCallback(allResults);
         } else {
             // 继续检查下一个商品
-            const nextProduct = getConfig().productLinks[index + 1];
-            checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
-        }
-    });
-}
-
-// 格式化价格显示
-function formatPrice(price) {
-    if (!price || price === 0)
+            const nextProduct = getConfig
