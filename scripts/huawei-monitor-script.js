@@ -669,6 +669,18 @@ function formatPriceChange(diff) {
     return diff > 0 ? `↑涨价${diff.toFixed(2)}元` : `↓降价${Math.abs(diff).toFixed(2)}元`;
 }
 
+// 格式化价格显示
+function formatPrice(price) {
+    if (!price || price === 0) return "未知";
+    return price.toFixed(2) + "元";
+}
+
+// 格式化价格变化
+function formatPriceChange(diff) {
+    if (diff === 0) return "无变化";
+    return diff > 0 ? `↑涨价${diff.toFixed(2)}元` : `↓降价${Math.abs(diff).toFixed(2)}元`;
+}
+
 // 发送汇总通知 - 增强版
 function sendSummaryNotification(results) {
     const config = getConfig();
@@ -738,22 +750,20 @@ function sendSummaryNotification(results) {
                 }
                 summaryContent += "\n";
                 
-                // 如果华为商城商品，几乎都在促销，只要原价与当前价格有差异就显示
-                const isPriceReduced = result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1;
-                
-                // 显示原价信息（除非原价等于当前价格）
-                if (isPriceReduced) {
-                    summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
-                    
-                    // 计算降价额度
-                    const priceDrop = result.originalPrice - result.price;
-                    if (priceDrop > 0) {
-                        summaryContent += `- **降价**: ↓降价${priceDrop.toFixed(2)}元\n`;
-                    }
-                }
-                
-                // 对于明确的促销标识，显示促销标记
+                // 修改此处：只有在确实是促销商品时才显示原价和降价信息
                 if (result.isPromo) {
+                    // 显示原价信息（除非原价等于当前价格）
+                    if (result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1) {
+                        summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
+                        
+                        // 计算降价额度
+                        const priceDrop = result.originalPrice - result.price;
+                        if (priceDrop > 0) {
+                            summaryContent += `- **降价**: ↓降价${priceDrop.toFixed(2)}元\n`;
+                        }
+                    }
+                    
+                    // 只有确实在促销时，才显示促销标记
                     summaryContent += `- **促销**: ✅ 此商品正在促销\n`;
                 }
             }
@@ -799,14 +809,17 @@ function sendSummaryNotification(results) {
                     }
                     notificationBody += "\n";
                     
-                    // 显示原价和降价额度（除非原价等于当前价格）
-                    if (result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1) {
-                        notificationBody += `原价: ${formatPrice(result.originalPrice)}\n`;
-                        
-                        // 计算降价额度
-                        const priceDrop = result.originalPrice - result.price;
-                        if (priceDrop > 0) {
-                            notificationBody += `降价: ↓降价${priceDrop.toFixed(2)}元\n`;
+                    // 修改此处：只有在确实是促销商品时才显示原价和降价信息
+                    if (result.isPromo) {
+                        // 显示原价和降价额度（除非原价等于当前价格）
+                        if (result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1) {
+                            notificationBody += `原价: ${formatPrice(result.originalPrice)}\n`;
+                            
+                            // 计算降价额度
+                            const priceDrop = result.originalPrice - result.price;
+                            if (priceDrop > 0) {
+                                notificationBody += `降价: ↓降价${priceDrop.toFixed(2)}元\n`;
+                            }
                         }
                     }
                 }
@@ -823,27 +836,6 @@ function sendSummaryNotification(results) {
         }
         
         $done();
-    });
-}
-
-// 主函数 - 检查所有商品
-function checkAllProducts() {
-    const config = getConfig();
-    console.log(`开始检查所有商品，共 ${config.productLinks.length} 个商品链接`);
-    
-    // 如果没有配置商品，显示提示
-    if (!config.productLinks || config.productLinks.length === 0) {
-        console.log("未配置任何商品链接");
-        $notification.post("配置错误", "未配置任何商品链接", "请在BoxJS中配置至少一个商品链接");
-        $done();
-        return;
-    }
-    
-    // 检查第一个商品，递归检查所有商品
-    const results = [];
-    checkSingleProduct(config.productLinks[0], results, 0, config.productLinks.length, function(allResults) {
-        // 所有商品检查完毕，发送通知
-        sendSummaryNotification(allResults);
     });
 }
 
