@@ -1,9 +1,9 @@
-#!name=华为商城商品状态监控(完整版)
-#!desc=完整价格显示版：同时显示原价和优惠价，增加折扣信息，改进通知排版
+#!name=华为商城商品状态监控(增强版)
+#!desc=增强版：支持价格变动监控、改进通知排版、更丰富的状态信息
 
 [Script]
 华为商品监控 = type=cron,cronexp="*/5 * * * *",wake-system=1,timeout=60,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js
-华为商城测试工具 = type=http-request,pattern=^https?:\/\/m\.vmall\.com\/product\/.*test,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/manual-test-tool.js
+华为商城测试工具 = type=http-request,pattern=^https?:\/\/m\.vmall\.com\/product\/.*test,script-path=https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-manual-test-tool.js
 
 [MITM]
 hostname = %APPEND% m.vmall.com
