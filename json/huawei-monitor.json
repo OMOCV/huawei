@@ -158,7 +158,7 @@
         },
         {
           "name": "测试PushDeer配置",
-          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/manual-test-tool.js",
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-manual-test-tool.js",
           "argument": "test"
         }
       ],
