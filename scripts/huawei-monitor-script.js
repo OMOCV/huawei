@@ -2,7 +2,8 @@
 // 支持多商品独立配置、价格变化通知、优惠价显示等增强功能
 // 修复了促销判断和价格显示问题
 // 重点关注¥符号价格提取，精确识别原价
-// 更新日期: 2025-03-14
+// 更新日期: 2025-03-15
+// 修复预约申购状态商品被误判为促销商品的问题
 
 // 解析链接文本为结构化数据 (兼容旧版配置)
 function parseLinksText(text) {
@@ -238,6 +239,7 @@ function extractPageInfo(html) {
     let originalPrice = 0;   // 原价
     let promoPrice = 0;      // 优惠价/促销价
     let isPromo = false;     // 是否在促销中
+    let isAppointment = false; // 是否为预约申购状态
 
     try {
         // 尝试提取商品名称
@@ -246,7 +248,18 @@ function extractPageInfo(html) {
             productName = titleMatch[1].replace(/[\_\-\|].*$/, "").trim();
         }
         
-        // ===== 首先提取¥符号价格 =====
+        // ===== 首先检查是否为预约申购状态 =====
+        // 检查页面是否包含预约申购相关关键词
+        const appointmentKeywords = ["预约", "申购", "本场预约申购已结束", "即将上市", "预售"];
+        for (const keyword of appointmentKeywords) {
+            if (html.includes(keyword)) {
+                console.log(`检测到预约关键词: ${keyword}`);
+                isAppointment = true;
+                break;
+            }
+        }
+        
+        // ===== 提取¥符号价格 =====
         // 华为商城中，带¥符号的数字通常是原价
         const yenPriceMatches = html.match(/¥\s*(\d+(\.\d+)?)/g);
         
@@ -264,8 +277,8 @@ function extractPageInfo(html) {
                 console.log(`使用第一个带¥价格作为原价: ${originalPrice}`);
             }
             
-            // 如果有多个价格，可能存在促销
-            if (allPrices.length >= 2) {
+            // 修改: 如果有多个价格且不是预约状态，才可能是促销
+            if (allPrices.length >= 2 && !isAppointment) {
                 isPromo = true;
                 
                 // 如果还没设置促销价，使用第二个价格
@@ -300,13 +313,15 @@ function extractPageInfo(html) {
         }
         
         // ===== 检测促销标识词 =====
-        // 检查页面是否包含促销相关关键词
-        const promoKeywords = ["促销", "直降", "优惠", "折扣", "减", "省", "特价", "秒杀", "限时", "立省", "立减", "低至"];
-        for (const keyword of promoKeywords) {
-            if (html.includes(keyword)) {
-                console.log(`检测到促销关键词: ${keyword}`);
-                isPromo = true;
-                break;
+        // 检查页面是否包含促销相关关键词，但预约申购状态的商品除外
+        if (!isAppointment) {
+            const promoKeywords = ["促销", "直降", "优惠", "折扣", "减", "省", "特价", "秒杀", "限时", "立省", "立减", "低至"];
+            for (const keyword of promoKeywords) {
+                if (html.includes(keyword)) {
+                    console.log(`检测到促销关键词: ${keyword}`);
+                    isPromo = true;
+                    break;
+                }
             }
         }
         
@@ -316,7 +331,7 @@ function extractPageInfo(html) {
         const promoPriceMatch = html.match(/["']promoPrice["']\s*:\s*(\d+(\.\d+)?)/);
         const promoPriceLabelMatch = html.match(/["']promoLabel["']\s*:\s*["']([^"']+)["']/);
         
-        if (promoPriceMatch && promoPriceMatch[1]) {
+        if (promoPriceMatch && promoPriceMatch[1] && !isAppointment) {
             promoPrice = parseFloat(promoPriceMatch[1]);
             console.log(`找到促销价格: ${promoPrice}`);
             isPromo = true;  // 如果有promoPrice字段，明确是促销
@@ -325,7 +340,7 @@ function extractPageInfo(html) {
             price = promoPrice;
         }
         
-        if (promoPriceLabelMatch && promoPriceLabelMatch[1]) {
+        if (promoPriceLabelMatch && promoPriceLabelMatch[1] && !isAppointment) {
             console.log(`找到促销标签: ${promoPriceLabelMatch[1]}`);
             isPromo = true;  // 如果有促销标签，明确是促销
         }
@@ -352,8 +367,8 @@ function extractPageInfo(html) {
                 console.log(`找到originPrice字段: ${originalPrice}`);
             }
             
-            // 如果JSON中的原价与当前价格不同，则可能是促销
-            if (originalPrice > 0 && price > 0 && originalPrice > price) {
+            // 修改: 如果JSON中的原价与当前价格不同，且不是预约申购状态，则可能是促销
+            if (originalPrice > 0 && price > 0 && originalPrice > price && !isAppointment) {
                 console.log(`originPrice(${originalPrice}) > price(${price})，判定为促销`);
                 isPromo = true;
             }
@@ -374,10 +389,28 @@ function extractPageInfo(html) {
                         // 提取按钮信息
                         if (product.buttonInfo && product.buttonInfo.buttonName) {
                             buttonName = product.buttonInfo.buttonName;
+                            
+                            // 检查按钮名称是否包含预约相关字段
+                            if (buttonName.includes("appointment") || 
+                                buttonName.includes("yuyue") || 
+                                buttonName.includes("预约")) {
+                                isAppointment = true;
+                                console.log("从按钮名称判断为预约状态商品");
+                            }
                         }
+                        
                         if (product.buttonText) {
                             buttonText = product.buttonText;
+                            
+                            // 检查按钮文本是否包含预约相关内容
+                            if (buttonText.includes("预约") || 
+                                buttonText.includes("申购") || 
+                                buttonText.includes("即将上市")) {
+                                isAppointment = true;
+                                console.log("从按钮文本判断为预约状态商品");
+                            }
                         }
+                        
                         if (product.name) {
                             productName = product.name;
                         } else if (product.sbomName) {
@@ -395,7 +428,7 @@ function extractPageInfo(html) {
                             console.log(`从JSON中提取到originPrice: ${originalPrice}`);
                         }
                         
-                        if (promoPrice === 0 && product.promoPrice) {
+                        if (promoPrice === 0 && product.promoPrice && !isAppointment) {
                             promoPrice = parseFloat(product.promoPrice);
                             console.log(`从JSON中提取到promoPrice: ${promoPrice}`);
                             
@@ -407,8 +440,8 @@ function extractPageInfo(html) {
                             isPromo = true;
                         }
                         
-                        // 检查是否有促销标签或活动
-                        if (product.promoTag || product.promoActivity) {
+                        // 检查是否有促销标签或活动，但预约申购状态的商品除外
+                        if ((product.promoTag || product.promoActivity) && !isAppointment) {
                             isPromo = true;
                             console.log("商品有促销标签或活动");
                         }
@@ -426,10 +459,26 @@ function extractPageInfo(html) {
             
             if (buttonNameMatch && buttonNameMatch[1]) {
                 buttonName = buttonNameMatch[1];
+                
+                // 检查按钮名称是否包含预约相关字段
+                if (buttonName.includes("appointment") || 
+                    buttonName.includes("yuyue") || 
+                    buttonName.includes("预约")) {
+                    isAppointment = true;
+                    console.log("从按钮名称判断为预约状态商品");
+                }
             }
             
             if (buttonTextMatch && buttonTextMatch[1]) {
                 buttonText = buttonTextMatch[1];
+                
+                // 检查按钮文本是否包含预约相关内容
+                if (buttonText.includes("预约") || 
+                    buttonText.includes("申购") || 
+                    buttonText.includes("即将上市")) {
+                    isAppointment = true;
+                    console.log("从按钮文本判断为预约状态商品");
+                }
             }
         }
         
@@ -447,12 +496,15 @@ function extractPageInfo(html) {
             } else if (html.includes("预约申购已结束")) {
                 buttonText = "预约申购已结束";
                 buttonName = "appointment_ended";
+                isAppointment = true;  // 明确设置为预约状态
             } else if (html.includes("立即预约") || html.includes("预约")) {
                 buttonText = "立即预约";
                 buttonName = "appointment";
+                isAppointment = true;  // 明确设置为预约状态
             } else if (html.includes("即将上市")) {
                 buttonText = "即将上市";
                 buttonName = "coming_soon";
+                isAppointment = true;  // 明确设置为预约状态
             }
         }
         
@@ -485,12 +537,18 @@ function extractPageInfo(html) {
             console.log(`原价(${originalPrice})低于当前价格(${price})，调整原价为当前价格的105%: ${originalPrice}`);
         }
         
-        // 确保promoPrice已设置（对于华为商城，几乎所有商品都在促销）
+        // 确保promoPrice已设置（仅对促销商品）
         if (isPromo && promoPrice === 0) {
             promoPrice = price;
         }
         
-        console.log(`最终价格信息 - 当前价格: ${price}, 原价: ${originalPrice}, 促销价: ${promoPrice}, 是否促销: ${isPromo}`);
+        // 最重要的修复：预约申购状态的商品，强制设置isPromo为false
+        if (isAppointment) {
+            isPromo = false;
+            console.log("商品为预约申购状态，设置为非促销商品");
+        }
+        
+        console.log(`最终价格信息 - 当前价格: ${price}, 原价: ${originalPrice}, 促销价: ${promoPrice}, 是否促销: ${isPromo}, 是否预约: ${isAppointment}`);
         
     } catch (error) {
         console.log("提取页面信息失败: " + error);
@@ -503,7 +561,8 @@ function extractPageInfo(html) {
         price: price,
         originalPrice: originalPrice,
         promoPrice: promoPrice,
-        isPromo: isPromo
+        isPromo: isPromo,
+        isAppointment: isAppointment  // 新增字段，标记是否为预约申购状态
     };
 }
 
@@ -669,18 +728,6 @@ function formatPriceChange(diff) {
     return diff > 0 ? `↑涨价${diff.toFixed(2)}元` : `↓降价${Math.abs(diff).toFixed(2)}元`;
 }
 
-// 格式化价格显示
-function formatPrice(price) {
-    if (!price || price === 0) return "未知";
-    return price.toFixed(2) + "元";
-}
-
-// 格式化价格变化
-function formatPriceChange(diff) {
-    if (diff === 0) return "无变化";
-    return diff > 0 ? `↑涨价${diff.toFixed(2)}元` : `↓降价${Math.abs(diff).toFixed(2)}元`;
-}
-
 // 发送汇总通知 - 增强版
 function sendSummaryNotification(results) {
     const config = getConfig();
@@ -750,20 +797,22 @@ function sendSummaryNotification(results) {
                 }
                 summaryContent += "\n";
                 
-                // 修改此处：只有在确实是促销商品时才显示原价和降价信息
-                if (result.isPromo) {
-                    // 显示原价信息（除非原价等于当前价格）
-                    if (result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1) {
-                        summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
-                        
-                        // 计算降价额度
-                        const priceDrop = result.originalPrice - result.price;
-                        if (priceDrop > 0) {
-                            summaryContent += `- **降价**: ↓降价${priceDrop.toFixed(2)}元\n`;
-                        }
-                    }
+                // 如果华为商城商品，几乎都在促销，只要原价与当前价格有差异就显示
+                const isPriceReduced = result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1;
+                
+                // 显示原价信息（除非原价等于当前价格）
+                if (isPriceReduced) {
+                    summaryContent += `- **原价**: ${formatPrice(result.originalPrice)}\n`;
                     
-                    // 只有确实在促销时，才显示促销标记
+                    // 计算降价额度
+                    const priceDrop = result.originalPrice - result.price;
+                    if (priceDrop > 0) {
+                        summaryContent += `- **降价**: ↓降价${priceDrop.toFixed(2)}元\n`;
+                    }
+                }
+                
+                // 对于明确的促销标识，显示促销标记
+                if (result.isPromo) {
                     summaryContent += `- **促销**: ✅ 此商品正在促销\n`;
                 }
             }
@@ -809,17 +858,14 @@ function sendSummaryNotification(results) {
                     }
                     notificationBody += "\n";
                     
-                    // 修改此处：只有在确实是促销商品时才显示原价和降价信息
-                    if (result.isPromo) {
-                        // 显示原价和降价额度（除非原价等于当前价格）
-                        if (result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1) {
-                            notificationBody += `原价: ${formatPrice(result.originalPrice)}\n`;
-                            
-                            // 计算降价额度
-                            const priceDrop = result.originalPrice - result.price;
-                            if (priceDrop > 0) {
-                                notificationBody += `降价: ↓降价${priceDrop.toFixed(2)}元\n`;
-                            }
+                    // 显示原价和降价额度（除非原价等于当前价格）
+                    if (result.originalPrice > 0 && Math.abs(result.originalPrice - result.price) > 1) {
+                        notificationBody += `原价: ${formatPrice(result.originalPrice)}\n`;
+                        
+                        // 计算降价额度
+                        const priceDrop = result.originalPrice - result.price;
+                        if (priceDrop > 0) {
+                            notificationBody += `降价: ↓降价${priceDrop.toFixed(2)}元\n`;
                         }
                     }
                 }
@@ -836,6 +882,27 @@ function sendSummaryNotification(results) {
         }
         
         $done();
+    });
+}
+
+// 主函数 - 检查所有商品
+function checkAllProducts() {
+    const config = getConfig();
+    console.log(`开始检查所有商品，共 ${config.productLinks.length} 个商品链接`);
+    
+    // 如果没有配置商品，显示提示
+    if (!config.productLinks || config.productLinks.length === 0) {
+        console.log("未配置任何商品链接");
+        $notification.post("配置错误", "未配置任何商品链接", "请在BoxJS中配置至少一个商品链接");
+        $done();
+        return;
+    }
+    
+    // 检查第一个商品，递归检查所有商品
+    const results = [];
+    checkSingleProduct(config.productLinks[0], results, 0, config.productLinks.length, function(allResults) {
+        // 所有商品检查完毕，发送通知
+        sendSummaryNotification(allResults);
     });
 }
 
