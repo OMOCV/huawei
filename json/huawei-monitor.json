@@ -11,7 +11,7 @@
       "descs_html": [
         "基于BoxJS的华为商城商品状态监控工具",
         "支持监控多个商品，定时检查并通知状态变化",
-        "增强版: 支持价格变动监控、改进通知排版"
+        "增强版: 支持多渠道通知、价格历史记录、批量导入"
       ],
       "keys": [
         "product1Url",
@@ -24,8 +24,19 @@
         "product4Enabled",
         "product5Url",
         "product5Enabled",
+        "notifyChannel",
         "pushDeerKey",
         "pushDeerUrl",
+        "barkKey",
+        "barkUrl",
+        "telegramBotToken",
+        "telegramChatId",
+        "serverChanKey",
+        "pushPlusToken",
+        "emailConfig",
+        "weworkKey",
+        "saveHistory",
+        "historyDays",
         "checkInterval",
         "notifyOnlyOnChange",
         "debug"
@@ -109,11 +120,65 @@
           "desc": "是否启用商品5的监控"
         },
         {
+          "id": "batchImportHeader",
+          "name": "📂 批量导入商品",
+          "val": "",
+          "type": "text",
+          "desc": "批量导入多个商品链接"
+        },
+        {
+          "id": "batchImportText",
+          "name": "批量商品链接",
+          "val": "",
+          "type": "textarea",
+          "placeholder": "每行一个链接，格式: 链接 [true/false]\n示例:\nhttps://m.vmall.com/product/10086989076790.html [true]\nhttps://m.vmall.com/product/10086222076790.html [false]",
+          "autoGrow": true,
+          "rows": 5,
+          "desc": "每行输入一个商品链接，可选在链接后添加 [true] 或 [false] 表示是否启用"
+        },
+        {
           "id": "notifyHeader",
           "name": "🔔 通知设置",
           "val": "",
           "type": "text",
           "desc": "配置通知相关选项"
+        },
+        {
+          "id": "notifyChannel",
+          "name": "通知渠道",
+          "val": "pushDeer",
+          "type": "radios",
+          "items": [
+            {
+              "key": "pushDeer",
+              "label": "PushDeer"
+            },
+            {
+              "key": "bark",
+              "label": "Bark"
+            },
+            {
+              "key": "telegram",
+              "label": "Telegram"
+            },
+            {
+              "key": "serverChan",
+              "label": "Server酱"
+            },
+            {
+              "key": "pushPlus",
+              "label": "PushPlus"
+            },
+            {
+              "key": "wework",
+              "label": "企业微信"
+            },
+            {
+              "key": "email",
+              "label": "邮件"
+            }
+          ],
+          "desc": "选择通知推送渠道"
         },
         {
           "id": "pushDeerKey",
@@ -128,6 +193,91 @@
           "val": "https://api2.pushdeer.com/message/push",
           "type": "text",
           "desc": "PushDeer 推送服务的 URL"
+        },
+        {
+          "id": "barkKey",
+          "name": "Bark Key",
+          "val": "",
+          "type": "text",
+          "desc": "Bark 推送的 Key (即设备码)"
+        },
+        {
+          "id": "barkUrl",
+          "name": "Bark URL",
+          "val": "https://api.day.app",
+          "type": "text",
+          "desc": "Bark 推送服务的 URL，自建服务器请修改"
+        },
+        {
+          "id": "telegramBotToken",
+          "name": "Telegram Bot Token",
+          "val": "",
+          "type": "text",
+          "desc": "Telegram Bot 的 Token"
+        },
+        {
+          "id": "telegramChatId",
+          "name": "Telegram Chat ID",
+          "val": "",
+          "type": "text",
+          "desc": "Telegram 接收消息的 Chat ID"
+        },
+        {
+          "id": "serverChanKey",
+          "name": "Server酱 SendKey",
+          "val": "",
+          "type": "text",
+          "desc": "Server酱 的 SendKey"
+        },
+        {
+          "id": "pushPlusToken",
+          "name": "PushPlus Token",
+          "val": "",
+          "type": "text",
+          "desc": "PushPlus 的 Token"
+        },
+        {
+          "id": "weworkKey",
+          "name": "企业微信 WebHook",
+          "val": "",
+          "type": "text",
+          "desc": "企业微信群机器人的 WebHook URL"
+        },
+        {
+          "id": "emailConfig",
+          "name": "邮件配置",
+          "val": "",
+          "type": "text",
+          "placeholder": "格式: 发件人邮箱,SMTP密码,SMTP服务器,SMTP端口,收件人邮箱",
+          "desc": "邮件推送配置，以逗号分隔"
+        },
+        {
+          "id": "historyHeader",
+          "name": "📊 价格历史记录",
+          "val": "",
+          "type": "text",
+          "desc": "配置价格历史记录选项"
+        },
+        {
+          "id": "saveHistory",
+          "name": "保存价格历史",
+          "val": true,
+          "type": "boolean",
+          "desc": "是否保存每个商品的价格历史记录"
+        },
+        {
+          "id": "historyDays",
+          "name": "历史记录保存天数",
+          "val": 30,
+          "type": "number",
+          "desc": "历史价格记录保存的最大天数"
+        },
+        {
+          "id": "otherHeader",
+          "name": "⚙️ 其他设置",
+          "val": "",
+          "type": "text",
+          "desc": "其他配置选项"
         },
         {
           "id": "checkInterval",
@@ -157,9 +307,19 @@
           "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js"
         },
         {
-          "name": "测试PushDeer配置",
+          "name": "测试通知配置",
           "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-manual-test-tool.js",
           "argument": "test"
+        },
+        {
+          "name": "导入批量商品",
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
+          "argument": "importBatch"
+        },
+        {
+          "name": "查看价格历史",
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
+          "argument": "showHistory"
         }
       ],
       "author": "@Claude",
