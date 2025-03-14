@@ -2,6 +2,7 @@
 // 支持多商品独立配置、价格变化通知、优惠价显示等增强功能
 // 新增功能：多渠道推送、价格历史记录、批量导入商品
 // 修复了预约申购状态商品被误判为促销商品的问题
+// 修复了价格历史记录相关功能的兼容性问题
 // 更新日期: 2025-03-15
 
 // ======== 基础配置功能 ========
@@ -565,9 +566,9 @@ function sendEmailNotification(title, content, callback) {
   callback && callback();
 }
 
-// ======== 历史价格记录功能 ========
+// ======== 历史价格记录功能 - 修复版 ========
 
-// 保存商品价格历史记录
+// 保存商品价格历史记录 - 修复版
 function savePriceHistory(productId, productName, price, originalPrice) {
   // 检查是否启用价格历史记录功能
   const config = getConfig();
@@ -601,8 +602,14 @@ function savePriceHistory(productId, productName, price, originalPrice) {
   const timestamp = now.getTime();
   const dateString = now.toISOString().split('T')[0]; // 格式: YYYY-MM-DD
   
-  // 检查今天是否已经有记录
-  const todayRecord = history.find(item => item.date === dateString);
+  // 检查今天是否已经有记录 - 修复：不使用find方法，改用循环
+  let todayRecord = null;
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].date === dateString) {
+      todayRecord = history[i];
+      break;
+    }
+  }
   
   if (todayRecord) {
     // 如果价格有变化，更新今天的记录
@@ -625,15 +632,31 @@ function savePriceHistory(productId, productName, price, originalPrice) {
     });
   }
   
-  // 计算最低价和最高价
-  const lowestPrice = Math.min(...history.map(item => item.price));
-  const highestPrice = Math.max(...history.map(item => item.price));
+  // 计算最低价和最高价 - 不使用Math.min/max与map的组合，改用循环
+  let lowestPrice = Number.MAX_VALUE;
+  let highestPrice = 0;
+  
+  for (let i = 0; i < history.length; i++) {
+    if (history[i].price < lowestPrice) {
+      lowestPrice = history[i].price;
+    }
+    if (history[i].price > highestPrice) {
+      highestPrice = history[i].price;
+    }
+  }
+  
+  // 如果没有找到有效数据，使用当前价格
+  if (lowestPrice === Number.MAX_VALUE) {
+    lowestPrice = price;
+  }
   
   // 保留指定天数的历史记录
   const maxDays = config.historyDays;
   if (history.length > maxDays) {
-    // 按时间戳排序，保留最新的记录
-    history.sort((a, b) => b.timestamp - a.timestamp);
+    // 按时间戳排序，保留最新的记录（手动排序方法）
+    history.sort(function(a, b) {
+      return b.timestamp - a.timestamp;
+    });
     history = history.slice(0, maxDays);
   }
   
@@ -670,20 +693,43 @@ function getPriceHistory(productId) {
   }
 }
 
-// 生成价格历史ASCII图表
+// 生成价格历史ASCII图表 - 修复版
 function generatePriceHistoryChart(history, width = 30, height = 10) {
   if (!history || history.length === 0) {
     return "无价格历史数据";
   }
   
-  // 按日期排序
-  const sortedHistory = [...history].sort((a, b) => {
-    return new Date(a.date) - new Date(b.date);
-  });
+  // 按日期排序 - 修复：不使用sort方法，使用简单排序
+  const sortedHistory = [];
+  for (let i = 0; i < history.length; i++) {
+    sortedHistory.push(history[i]);
+  }
   
-  // 获取价格范围
-  let minPrice = Math.min(...sortedHistory.map(item => item.price));
-  let maxPrice = Math.max(...sortedHistory.map(item => item.price));
+  // 冒泡排序，按日期从早到晚
+  for (let i = 0; i < sortedHistory.length; i++) {
+    for (let j = 0; j < sortedHistory.length - i - 1; j++) {
+      const date1 = new Date(sortedHistory[j].date);
+      const date2 = new Date(sortedHistory[j + 1].date);
+      if (date1 > date2) {
+        const temp = sortedHistory[j];
+        sortedHistory[j] = sortedHistory[j + 1];
+        sortedHistory[j + 1] = temp;
+      }
+    }
+  }
+  
+  // 获取价格范围 - 修复：不使用Math.min/max，手动找最小最大值
+  let minPrice = Number.MAX_VALUE;
+  let maxPrice = 0;
+  
+  for (let i = 0; i < sortedHistory.length; i++) {
+    if (sortedHistory[i].price < minPrice) {
+      minPrice = sortedHistory[i].price;
+    }
+    if (sortedHistory[i].price > maxPrice) {
+      maxPrice = sortedHistory[i].price;
+    }
+  }
   
   // 如果最大值和最小值相同，添加一点范围
   if (minPrice === maxPrice) {
@@ -702,11 +748,11 @@ function generatePriceHistoryChart(history, width = 30, height = 10) {
   
   // 如果数据点少于宽度，则直接映射
   if (sortedHistory.length <= width) {
-    sortedHistory.forEach((item, index) => {
-      const x = index;
-      const y = Math.round((height - 1) * (1 - (item.price - minPrice) / (maxPrice - minPrice)));
-      dataPoints.push({ x, y, price: item.price, date: item.date });
-    });
+    for (let i = 0; i < sortedHistory.length; i++) {
+      const x = i;
+      const y = Math.round((height - 1) * (1 - (sortedHistory[i].price - minPrice) / (maxPrice - minPrice)));
+      dataPoints.push({ x, y, price: sortedHistory[i].price, date: sortedHistory[i].date });
+    }
   } else {
     // 如果数据点过多，需要进行抽样
     const step = sortedHistory.length / width;
@@ -791,7 +837,7 @@ function generatePriceHistoryChart(history, width = 30, height = 10) {
   return chartString;
 }
 
-// 显示价格历史记录
+// 显示价格历史记录 - 修复版
 function showPriceHistory(productId) {
   const history = getPriceHistory(productId);
   
@@ -807,8 +853,19 @@ function showPriceHistory(productId) {
   // 生成ASCII图表
   const chart = generatePriceHistoryChart(history.history);
   
-  // 计算价格统计
-  const currentPrice = history.history.length > 0 ? history.history[0].price : 0;
+  // 计算价格统计 - 修复：不使用sort方法，手动找最新记录
+  let currentPrice = 0;
+  if (history.history.length > 0) {
+    // 找到时间戳最大的记录
+    let latestRecord = history.history[0];
+    for (let i = 1; i < history.history.length; i++) {
+      if (history.history[i].timestamp > latestRecord.timestamp) {
+        latestRecord = history.history[i];
+      }
+    }
+    currentPrice = latestRecord.price;
+  }
+  
   const lowestPrice = history.lowestPrice;
   const highestPrice = history.highestPrice;
   const priceRange = highestPrice - lowestPrice;
@@ -839,7 +896,7 @@ function showPriceHistory(productId) {
   );
 }
 
-// 显示所有商品的价格历史汇总
+// 显示所有商品的价格历史汇总 - 修复版
 function showAllPriceHistory() {
   // 获取所有商品链接
   const config = getConfig();
@@ -885,11 +942,23 @@ function showAllPriceHistory() {
   // 构建汇总内容
   let content = "## 📊 所有商品价格历史汇总\n\n";
   
-  allProductHistories.forEach((history, index) => {
+  for (let index = 0; index < allProductHistories.length; index++) {
+    const history = allProductHistories[index];
     content += `### ${index + 1}. ${history.productName}\n\n`;
     
-    // 当前价格和历史价格
-    const currentPrice = history.history.length > 0 ? history.history[0].price : 0;
+    // 当前价格和历史价格 - 修复：手动找最新记录
+    let currentPrice = 0;
+    if (history.history.length > 0) {
+      // 找到时间戳最大的记录
+      let latestRecord = history.history[0];
+      for (let i = 1; i < history.history.length; i++) {
+        if (history.history[i].timestamp > latestRecord.timestamp) {
+          latestRecord = history.history[i];
+        }
+      }
+      currentPrice = latestRecord.price;
+    }
+    
     content += `- **当前价格**: ${formatPrice(currentPrice)}\n`;
     content += `- **历史最低**: ${formatPrice(history.lowestPrice)}\n`;
     content += `- **历史最高**: ${formatPrice(history.highestPrice)}\n`;
@@ -912,12 +981,24 @@ function showAllPriceHistory() {
     
     content += `- **记录天数**: ${history.history.length}天\n\n`;
     
-    // 添加简易图表表示最近的价格趋势 (仅显示简单的上升/下降)
+    // 添加简易图表表示最近的价格趋势 (仅显示简单的上升/下降) - 修复：手动排序
     if (history.history.length >= 2) {
-      // 按日期排序
-      const sortedHistory = [...history.history].sort((a, b) => {
-        return new Date(b.date) - new Date(a.date);
-      });
+      // 复制并按日期排序，从新到旧
+      const sortedHistory = [];
+      for (let i = 0; i < history.history.length; i++) {
+        sortedHistory.push(history.history[i]);
+      }
+      
+      // 冒泡排序，按时间戳从大到小
+      for (let i = 0; i < sortedHistory.length; i++) {
+        for (let j = 0; j < sortedHistory.length - i - 1; j++) {
+          if (sortedHistory[j].timestamp < sortedHistory[j + 1].timestamp) {
+            const temp = sortedHistory[j];
+            sortedHistory[j] = sortedHistory[j + 1];
+            sortedHistory[j + 1] = temp;
+          }
+        }
+      }
       
       // 取最近5个价格点
       const recentPrices = sortedHistory.slice(0, Math.min(5, sortedHistory.length));
@@ -952,7 +1033,7 @@ function showAllPriceHistory() {
       }
       content += "]\n\n";
     }
-  });
+  }
   
   // 添加查看详情的提示
   content += "## 💡 查看详情\n\n";
@@ -1136,7 +1217,8 @@ function extractPageInfo(html) {
     // ===== 首先检查是否为预约申购状态 =====
     // 检查页面是否包含预约申购相关关键词
     const appointmentKeywords = ["预约", "申购", "本场预约申购已结束", "即将上市", "预售"];
-    for (const keyword of appointmentKeywords) {
+    for (let i = 0; i < appointmentKeywords.length; i++) {
+      const keyword = appointmentKeywords[i];
       if (html.includes(keyword)) {
         console.log(`检测到预约关键词: ${keyword}`);
         isAppointment = true;
@@ -1150,9 +1232,10 @@ function extractPageInfo(html) {
     
     if (yenPriceMatches && yenPriceMatches.length > 0) {
       // 提取所有带¥的价格并转换为数字
-      const allPrices = yenPriceMatches.map(p => 
-        parseFloat(p.replace(/¥\s*/, ""))
-      );
+      const allPrices = [];
+      for (let i = 0; i < yenPriceMatches.length; i++) {
+        allPrices.push(parseFloat(yenPriceMatches[i].replace(/¥\s*/, "")));
+      }
       
       console.log(`找到所有带¥符号的价格: ${JSON.stringify(allPrices)}`);
       
@@ -1201,7 +1284,8 @@ function extractPageInfo(html) {
     // 检查页面是否包含促销相关关键词，但预约申购状态的商品除外
     if (!isAppointment) {
       const promoKeywords = ["促销", "直降", "优惠", "折扣", "减", "省", "特价", "秒杀", "限时", "立省", "立减", "低至"];
-      for (const keyword of promoKeywords) {
+      for (let i = 0; i < promoKeywords.length; i++) {
+        const keyword = promoKeywords[i];
         if (html.includes(keyword)) {
           console.log(`检测到促销关键词: ${keyword}`);
           isPromo = true;
@@ -1623,7 +1707,12 @@ function sendSummaryNotification(results) {
   const config = getConfig();
   
   // 检查是否有状态或价格变化的商品
-  const changedProducts = results.filter(r => r.success && (r.hasChanged || r.priceChanged));
+  const changedProducts = [];
+  for (let i = 0; i < results.length; i++) {
+    if (results[i].success && (results[i].hasChanged || results[i].priceChanged)) {
+      changedProducts.push(results[i]);
+    }
+  }
   
   // 构建汇总消息
   let summaryTitle = "";
@@ -1634,7 +1723,8 @@ function sendSummaryNotification(results) {
     summaryContent = "## 🔔 商品变化通知\n\n";
     
     // 添加变化的商品信息
-    changedProducts.forEach((result, index) => {
+    for (let index = 0; index < changedProducts.length; index++) {
+      const result = changedProducts[index];
       summaryContent += `### ${index + 1}. ${result.productName}\n\n`;
       
       if (result.hasChanged) {
@@ -1659,7 +1749,7 @@ function sendSummaryNotification(results) {
       }
       
       summaryContent += `- **检查时间**: ${new Date().toLocaleString("zh-CN")}\n\n`;
-    });
+    }
   } else {
     summaryTitle = "✅ 商品状态检查完成";
     summaryContent = "## 📊 商品状态检查汇总\n\n";
@@ -1668,7 +1758,8 @@ function sendSummaryNotification(results) {
   // 添加所有商品的当前状态 - 使用树状结构改进排版
   summaryContent += "## 📋 所有商品当前状态\n\n";
   
-  results.forEach((result, index) => {
+  for (let index = 0; index < results.length; index++) {
+    const result = results[index];
     if (result.success && result.buttonInfo) {
       // 显示序号和商品名，状态变化时添加标记
       summaryContent += `### ${index + 1}. ${result.productName}${result.hasChanged || result.priceChanged ? " ⚠️" : ""}\n\n`;
@@ -1713,13 +1804,14 @@ function sendSummaryNotification(results) {
       summaryContent += `### ${index + 1}. ${result.productName || result.url}\n\n`;
       summaryContent += `- **状态**: 检查失败 - ${result.message}\n\n`;
     }
-  });
+  }
   
   // 使用通用通知函数发送通知
   sendNotification(summaryTitle, summaryContent, function() {
     // 对于变化的商品，发送弹窗通知 - 无论是状态变化还是价格变化
     if (changedProducts.length > 0) {
-      changedProducts.forEach(result => {
+      for (let i = 0; i < changedProducts.length; i++) {
+        const result = changedProducts[i];
         // 准备弹窗通知内容
         let title = "";
         let notificationBody = "";
@@ -1768,7 +1860,7 @@ function sendSummaryNotification(results) {
           notificationBody,
           { url: result.url }
         );
-      });
+      }
     }
     
     $done();

@@ -2,7 +2,7 @@
 // 用于手动测试商品状态检查和通知配置
 // 在浏览器中访问商品页面时添加 "test" 参数即可触发测试
 // 更新日期: 2025-03-15
-// 支持多渠道推送、价格历史记录查询测试
+// 修复了ES6兼容性问题
 
 // ======== 配置读取功能 ========
 
@@ -424,7 +424,7 @@ function sendEmailNotification(title, content, callback) {
 
 // ======== 商品信息提取功能 ========
 
-// 提取页面信息 - 增加对非促销商品价格的处理
+// 提取页面信息 - 增加对非促销商品价格的处理，修复ES6兼容性问题
 function extractPageInfo(html) {
   // 默认值
   let buttonName = "";
@@ -446,7 +446,8 @@ function extractPageInfo(html) {
     // ===== 首先检查是否为预约申购状态 =====
     // 检查页面是否包含预约申购相关关键词
     const appointmentKeywords = ["预约", "申购", "本场预约申购已结束", "即将上市", "预售"];
-    for (const keyword of appointmentKeywords) {
+    for (let i = 0; i < appointmentKeywords.length; i++) {
+      const keyword = appointmentKeywords[i];
       if (html.includes(keyword)) {
         console.log(`检测到预约关键词: ${keyword}`);
         isAppointment = true;
@@ -460,9 +461,10 @@ function extractPageInfo(html) {
     
     if (yenPriceMatches && yenPriceMatches.length > 0) {
       // 提取所有带¥的价格并转换为数字
-      const allPrices = yenPriceMatches.map(p => 
-        parseFloat(p.replace(/¥\s*/, ""))
-      );
+      const allPrices = [];
+      for (let i = 0; i < yenPriceMatches.length; i++) {
+        allPrices.push(parseFloat(yenPriceMatches[i].replace(/¥\s*/, "")));
+      }
       
       console.log(`找到所有带¥符号的价格: ${JSON.stringify(allPrices)}`);
       
@@ -511,7 +513,8 @@ function extractPageInfo(html) {
     // 检查页面是否包含促销相关关键词，但预约申购状态的商品除外
     if (!isAppointment) {
       const promoKeywords = ["促销", "直降", "优惠", "折扣", "减", "省", "特价", "秒杀", "限时", "立省", "立减", "低至"];
-      for (const keyword of promoKeywords) {
+      for (let i = 0; i < promoKeywords.length; i++) {
+        const keyword = promoKeywords[i];
         if (html.includes(keyword)) {
           console.log(`检测到促销关键词: ${keyword}`);
           isPromo = true;
