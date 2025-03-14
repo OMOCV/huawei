@@ -55,6 +55,7 @@ function parseLinksText(text) {
 function getPushDeerKey() {
   // 尝试多种可能的键名
   const possibleKeys = [
+    "vmall.notification.pushDeerKey", // 新增：子应用中的键名
     "vmall.pushDeerKey",  // 带命名空间前缀
     "pushDeerKey",        // 不带前缀
     "vmall.pushkey",      // 可能的其他写法
@@ -249,7 +250,8 @@ function sendNotification(title, content, callback) {
 function sendPushDeerNotification(title, content, callback) {
   // 尝试读取PushDeer配置
   const pushDeerKey = getPushDeerKey();
-  const pushDeerUrl = $persistentStore.read("vmall.pushDeerUrl") || 
+  const pushDeerUrl = $persistentStore.read("vmall.notification.pushDeerUrl") || 
+                      $persistentStore.read("vmall.pushDeerUrl") || 
                       $persistentStore.read("pushDeerUrl") || 
                       "https://api2.pushdeer.com/message/push";
   
@@ -299,9 +301,11 @@ function sendPushDeerNotification(title, content, callback) {
 // 发送Bark通知函数
 function sendBarkNotification(title, content, callback) {
   // 读取Bark配置
-  const barkKey = $persistentStore.read("vmall.barkKey") || 
+  const barkKey = $persistentStore.read("vmall.notification.barkKey") || 
+                  $persistentStore.read("vmall.barkKey") || 
                   $persistentStore.read("barkKey");
-  const barkUrl = $persistentStore.read("vmall.barkUrl") || 
+  const barkUrl = $persistentStore.read("vmall.notification.barkUrl") || 
+                  $persistentStore.read("vmall.barkUrl") || 
                   $persistentStore.read("barkUrl") || 
                   "https://api.day.app";
   
@@ -340,9 +344,11 @@ function sendBarkNotification(title, content, callback) {
 // 发送Telegram通知函数
 function sendTelegramNotification(title, content, callback) {
   // 读取Telegram配置
-  const telegramBotToken = $persistentStore.read("vmall.telegramBotToken") || 
+  const telegramBotToken = $persistentStore.read("vmall.notification.telegramBotToken") || 
+                           $persistentStore.read("vmall.telegramBotToken") || 
                            $persistentStore.read("telegramBotToken");
-  const telegramChatId = $persistentStore.read("vmall.telegramChatId") || 
+  const telegramChatId = $persistentStore.read("vmall.notification.telegramChatId") || 
+                         $persistentStore.read("vmall.telegramChatId") || 
                          $persistentStore.read("telegramChatId");
   
   // 检查Telegram配置
@@ -390,7 +396,8 @@ function sendTelegramNotification(title, content, callback) {
 // 发送Server酱通知函数
 function sendServerChanNotification(title, content, callback) {
   // 读取Server酱配置
-  const serverChanKey = $persistentStore.read("vmall.serverChanKey") || 
+  const serverChanKey = $persistentStore.read("vmall.notification.serverChanKey") || 
+                       $persistentStore.read("vmall.serverChanKey") || 
                        $persistentStore.read("serverChanKey");
   
   // 检查Server酱配置
@@ -430,7 +437,8 @@ function sendServerChanNotification(title, content, callback) {
 // 发送PushPlus通知函数
 function sendPushPlusNotification(title, content, callback) {
   // 读取PushPlus配置
-  const pushPlusToken = $persistentStore.read("vmall.pushPlusToken") || 
+  const pushPlusToken = $persistentStore.read("vmall.notification.pushPlusToken") || 
+                       $persistentStore.read("vmall.pushPlusToken") || 
                        $persistentStore.read("pushPlusToken");
   
   // 检查PushPlus配置
@@ -475,7 +483,8 @@ function sendPushPlusNotification(title, content, callback) {
 // 发送企业微信通知函数
 function sendWeworkNotification(title, content, callback) {
   // 读取企业微信配置
-  const weworkKey = $persistentStore.read("vmall.weworkKey") || 
+  const weworkKey = $persistentStore.read("vmall.notification.weworkKey") || 
+                   $persistentStore.read("vmall.weworkKey") || 
                    $persistentStore.read("weworkKey");
   
   // 检查企业微信配置
@@ -520,7 +529,8 @@ function sendWeworkNotification(title, content, callback) {
 // 发送邮件通知函数 (简化版，需要使用第三方SMTP服务)
 function sendEmailNotification(title, content, callback) {
   // 读取邮件配置
-  const emailConfig = $persistentStore.read("vmall.emailConfig") || 
+  const emailConfig = $persistentStore.read("vmall.notification.emailConfig") || 
+                     $persistentStore.read("vmall.emailConfig") || 
                      $persistentStore.read("emailConfig");
   
   // 检查邮件配置
