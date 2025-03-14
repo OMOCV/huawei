@@ -147,7 +147,7 @@
           "id": "notifyChannel",
           "name": "通知渠道",
           "val": "pushDeer",
-          "type": "radios",
+          "type": "select ",
           "items": [
             {
               "key": "pushDeer",
