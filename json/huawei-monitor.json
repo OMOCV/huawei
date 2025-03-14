@@ -154,7 +154,7 @@
       "scripts": [
         {
           "name": "执行商品状态检查",
-          "script": "vmall-enhanced.js"
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js"
         },
         {
           "name": "测试PushDeer配置",
