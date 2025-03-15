@@ -24,7 +24,7 @@
         "product4Enabled",
         "product5Url",
         "product5Enabled",
-        "notifyChannel",
+        "notifyChannels",
         "saveHistory",
         "historyDays",
         "checkInterval",
@@ -145,10 +145,10 @@
           "desc": "选择通知渠道并配置"
         },
         {
-          "id": "notifyChannel",
+          "id": "notifyChannels",
           "name": "通知渠道",
           "val": "pushDeer",
-          "type": "radios",
+          "type": "checkboxes",
           "items": [
             {
               "key": "pushDeer",
@@ -179,7 +179,7 @@
               "label": "邮件"
             }
           ],
-          "desc": "选择通知推送渠道"
+          "desc": "选择通知推送渠道，可多选"
         },
         {
           "id": "pushDeerKey",
