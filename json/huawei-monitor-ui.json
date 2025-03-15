@@ -11,7 +11,7 @@
       "descs_html": [
         "基于BoxJS的华为商城商品状态监控工具",
         "支持监控多个商品，定时检查并通知状态变化",
-        "增强版: 支持多渠道通知、价格历史记录、批量导入"
+        "增强版: 支持多渠道通知、价格历史记录、批量导入、商品截图"
       ],
       "keys": [
         "product1Url",
@@ -40,7 +40,10 @@
         "serverChanKey",
         "pushPlusToken",
         "weworkKey",
-        "emailConfig"
+        "emailConfig",
+        "enableScreenshot",
+        "screenshotApiService",
+        "screenshotApiKey"
       ],
       "settings": [
         {
@@ -274,6 +277,52 @@
           "desc": "历史价格记录保存的最大天数"
         },
         {
+          "id": "screenshotHeader",
+          "name": "📸 商品截图功能",
+          "val": "",
+          "type": "text",
+          "desc": "配置商品截图功能选项"
+        },
+        {
+          "id": "enableScreenshot",
+          "name": "启用商品截图",
+          "val": false,
+          "type": "boolean",
+          "desc": "是否在商品状态变化时获取并显示截图"
+        },
+        {
+          "id": "screenshotApiService",
+          "name": "截图API服务",
+          "val": "urlbox",
+          "type": "radios",
+          "items": [
+            {
+              "key": "urlbox",
+              "label": "Urlbox"
+            },
+            {
+              "key": "apiflash",
+              "label": "ApiFlash"
+            },
+            {
+              "key": "screenshotapi",
+              "label": "ScreenshotAPI.net"
+            },
+            {
+              "key": "screenshot-machine",
+              "label": "Screenshot Machine"
+            }
+          ],
+          "desc": "选择用于获取网页截图的API服务"
+        },
+        {
+          "id": "screenshotApiKey",
+          "name": "截图API密钥",
+          "val": "",
+          "type": "text",
+          "desc": "所选截图API服务的密钥/令牌"
+        },
+        {
           "id": "otherHeader",
           "name": "⚙️ 其他设置",
           "val": "",
@@ -321,6 +370,11 @@
           "name": "查看价格历史",
           "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
           "argument": "showHistory"
+        },
+        {
+          "name": "测试截图功能",
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
+          "argument": "testScreenshot"
         }
       ],
       "author": "@Claude",
