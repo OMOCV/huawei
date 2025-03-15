@@ -567,7 +567,7 @@ function sendEmailNotification(title, content, callback) {
   const fromEmail = configArray[0];
   const password = configArray[1];
   const smtpServer = configArray[2];
-  const smtpPort = configArray[3]; 
+  const smtpPort = configArray[3];
   const toEmail = configArray[4];
   
   // 由于Surge等环境通常不支持直接发送邮件，这里我们使用一个假设的第三方API
@@ -586,7 +586,7 @@ function sendEmailNotification(title, content, callback) {
 
 // ======== 历史价格记录功能 - 修复版 ========
 
-// 保存商品价格历史记录 - 修复版
+// 保存商品价格历史记录 - 修复版 (修复 history.push 问题)
 function savePriceHistory(productId, productName, price, originalPrice) {
   // 检查是否启用价格历史记录功能
   const config = getConfig();
@@ -640,14 +640,16 @@ function savePriceHistory(productId, productName, price, originalPrice) {
       console.log(`商品 ${productId} 今日价格无变化，跳过更新`);
     }
   } else {
-    // 添加新记录
+    // 添加新记录 - 修复: 不使用 push 方法，直接添加到数组
     console.log(`商品 ${productId} 添加新的价格记录`);
-    history.push({
+    // 修复: 避免使用 history.push，改用数组传统添加方式
+    const newRecord = {
       date: dateString,
       price: price,
       originalPrice: originalPrice,
       timestamp: timestamp
-    });
+    };
+    history[history.length] = newRecord; // 使用数组索引直接添加元素，而不是使用push
   }
   
   // 计算最低价和最高价 - 不使用Math.min/max与map的组合，改用循环
