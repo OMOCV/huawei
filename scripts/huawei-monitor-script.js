@@ -93,7 +93,7 @@ function getPushDeerKey() {
   return "";
 }
 
-// 获取配置 - 支持新的BoxJS单独商品输入框
+// 获取配置 - 支持新的BoxJS多通知渠道配置
 function getConfig() {
   // 尝试从新的单独输入框读取商品配置
   const productLinks = [];
@@ -144,10 +144,34 @@ function getConfig() {
   
   console.log(`共读取到 ${productLinks.length} 个商品链接`);
   
-  // 读取通知渠道设置
-  const notifyChannel = $persistentStore.read("vmall.notifyChannel") || 
-                        $persistentStore.read("notifyChannel") || 
-                        "pushDeer";
+  // 读取通知渠道设置 - 修改为支持多渠道
+  let notifyChannels = [];
+  
+  // 首先尝试读取新的多选渠道配置
+  const channelsStr = $persistentStore.read("vmall.notifyChannels") || 
+                     $persistentStore.read("notifyChannels");
+  
+  if (channelsStr) {
+    // 尝试解析多渠道配置
+    try {
+      const parsedChannels = JSON.parse(channelsStr);
+      if (Array.isArray(parsedChannels) && parsedChannels.length > 0) {
+        notifyChannels = parsedChannels;
+        console.log(`从BoxJS配置中读取到 ${notifyChannels.length} 个通知渠道`);
+      }
+    } catch (e) {
+      console.log(`解析通知渠道配置失败: ${e}，尝试使用单渠道配置`);
+    }
+  }
+  
+  // 如果没有找到多渠道配置，尝试读取单渠道配置作为向后兼容
+  if (notifyChannels.length === 0) {
+    const singleChannel = $persistentStore.read("vmall.notifyChannel") || 
+                          $persistentStore.read("notifyChannel") || 
+                          "pushDeer";
+    notifyChannels.push(singleChannel);
+    console.log(`未找到多渠道配置，使用单渠道配置: ${singleChannel}`);
+  }
   
   // 读取是否保存历史记录
   const saveHistory = ($persistentStore.read("vmall.saveHistory") === "true") || 
@@ -174,7 +198,7 @@ function getConfig() {
   
   return {
     productLinks: productLinks,
-    notifyChannel: notifyChannel,
+    notifyChannels: notifyChannels,
     saveHistory: saveHistory,
     historyDays: historyDays,
     checkInterval: checkInterval,
@@ -217,12 +241,61 @@ function processProductLink(link) {
 // 通用发送通知函数 - 支持多渠道
 function sendNotification(title, content, callback) {
   const config = getConfig();
-  const notifyChannel = config.notifyChannel;
+  const notifyChannels = config.notifyChannels;
   
-  console.log(`使用 ${notifyChannel} 发送通知`);
+  if (!notifyChannels || notifyChannels.length === 0) {
+    console.log("未配置任何通知渠道，使用默认渠道 PushDeer");
+    sendPushDeerNotification(title, content, callback);
+    return;
+  }
   
-  // 根据配置的通知渠道选择对应的发送函数
-  switch (notifyChannel) {
+  console.log(`将使用 ${notifyChannels.length} 个通知渠道发送通知`);
+  
+  // 如果只有一个渠道，直接发送
+  if (notifyChannels.length === 1) {
+    const channel = notifyChannels[0];
+    console.log(`使用单一渠道 ${channel} 发送通知`);
+    
+    // 根据配置的通知渠道选择对应的发送函数
+    sendToChannel(channel, title, content, callback);
+    return;
+  }
+  
+  // 如果有多个渠道，依次发送并在最后一个渠道发送完成后执行回调
+  let channelIndex = 0;
+  
+  function sendToNextChannel() {
+    if (channelIndex >= notifyChannels.length) {
+      // 所有渠道都已发送
+      console.log("所有通知渠道发送完成");
+      callback && callback();
+      return;
+    }
+    
+    const channel = notifyChannels[channelIndex];
+    console.log(`使用渠道 ${channel} 发送通知 (${channelIndex + 1}/${notifyChannels.length})`);
+    
+    // 最后一个渠道才传入回调
+    const isLastChannel = channelIndex === notifyChannels.length - 1;
+    const channelCallback = isLastChannel ? callback : sendToNextChannel;
+    
+    // 发送到指定渠道
+    sendToChannel(channel, title, content, function() {
+      // 处理完当前渠道，递增索引并发送到下一个渠道
+      channelIndex++;
+      
+      // 延迟一点时间再发送下一个通知，避免请求过快
+      setTimeout(sendToNextChannel, 300);
+    });
+  }
+  
+  // 开始发送第一个渠道
+  sendToNextChannel();
+}
+
+// 辅助函数：根据渠道名称选择对应的发送函数
+function sendToChannel(channel, title, content, callback) {
+  switch (channel) {
     case "pushDeer":
       sendPushDeerNotification(title, content, callback);
       break;
@@ -246,6 +319,7 @@ function sendNotification(title, content, callback) {
       break;
     default:
       // 默认使用PushDeer
+      console.log(`未知渠道 ${channel}，使用默认渠道 PushDeer`);
       sendPushDeerNotification(title, content, callback);
   }
 }
@@ -1929,14 +2003,24 @@ function testPushDeer() {
     "email": "邮件"
   };
   
-  // 获取当前通知渠道名称
-  const channelName = channelNames[config.notifyChannel] || config.notifyChannel;
+  // 如果有多个通知渠道，生成通知内容包含所有通知渠道信息
+  let channelsInfo = "";
+  if (config.notifyChannels.length > 1) {
+    channelsInfo = "已配置 " + config.notifyChannels.length + " 个通知渠道：";
+    for (let i = 0; i < config.notifyChannels.length; i++) {
+      const channel = config.notifyChannels[i];
+      channelsInfo += `\n${i+1}. ${channelNames[channel] || channel}`;
+    }
+  } else {
+    const channel = config.notifyChannels[0];
+    channelsInfo = `通知渠道: ${channelNames[channel] || channel}`;
+  }
   
   sendNotification(
-    `${channelName}配置测试`, 
-    `如果您看到此消息，说明${channelName}配置正确！\n\n这是从测试工具发送的测试消息。\n\n发送时间: ${new Date().toLocaleString("zh-CN")}`, 
+    `📣 通知渠道测试`, 
+    `如果您看到此消息，说明通知配置正确！\n\n${channelsInfo}\n\n将依次使用所有通知渠道发送测试消息。\n\n发送时间: ${new Date().toLocaleString("zh-CN")}`, 
     function() {
-      $notification.post("测试完成", `已尝试使用${channelName}发送测试消息`, "请检查您的设备是否收到通知");
+      $notification.post("测试完成", "已发送通知测试消息", "请检查您的设备是否收到通知");
       $done();
     }
   );
