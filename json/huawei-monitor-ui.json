@@ -169,14 +169,14 @@
               "label": "邮件"
             }
           ],
-          "desc": "选择通知推送渠道"
+          "desc": "选择通知推送渠道，然后点击下方的\"配置通知参数\"按钮进行详细设置"
         },
         {
-          "id": "notifyConfigLink",
-          "name": "⚙️ 配置通知详情",
-          "val": "",
+          "id": "notifyConfigDesc",
+          "name": "点击下方按钮配置通知参数",
+          "val": "点击下方\"配置通知参数\"按钮，将打开所选通知渠道的配置页面",
           "type": "text",
-          "desc": "点击下方按钮配置所选通知渠道的详细参数"
+          "desc": ""
         },
         {
           "id": "historyHeader",
@@ -249,39 +249,8 @@
           "argument": "showHistory"
         },
         {
-          "name": "配置 PushDeer",
-          "url": "http://boxjs.com/#/app/vmall.notification.pushDeer",
-          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
-        },
-        {
-          "name": "配置 Bark",
-          "url": "http://boxjs.com/#/app/vmall.notification.bark",
-          "hiddenOn": "this.notifyChannel !== 'bark'"
-        },
-        {
-          "name": "配置 Telegram",
-          "url": "http://boxjs.com/#/app/vmall.notification.telegram",
-          "hiddenOn": "this.notifyChannel !== 'telegram'"
-        },
-        {
-          "name": "配置 Server酱",
-          "url": "http://boxjs.com/#/app/vmall.notification.serverChan",
-          "hiddenOn": "this.notifyChannel !== 'serverChan'"
-        },
-        {
-          "name": "配置 PushPlus",
-          "url": "http://boxjs.com/#/app/vmall.notification.pushPlus",
-          "hiddenOn": "this.notifyChannel !== 'pushPlus'"
-        },
-        {
-          "name": "配置 企业微信",
-          "url": "http://boxjs.com/#/app/vmall.notification.wework",
-          "hiddenOn": "this.notifyChannel !== 'wework'"
-        },
-        {
-          "name": "配置 邮件通知",
-          "url": "http://boxjs.com/#/app/vmall.notification.email",
-          "hiddenOn": "this.notifyChannel !== 'email'"
+          "name": "配置通知参数",
+          "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/notify-config-redirect.js"
         }
       ],
       "author": "@Claude",
