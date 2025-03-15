@@ -179,119 +179,127 @@
               "label": "邮件"
             }
           ],
-          "desc": "选择通知推送渠道"
+          "desc": "选择通知推送渠道，选择后可配置对应的详细参数"
         },
         {
-          "id": "pushDeerKeyDesc",
-          "name": "------------- PushDeer 配置 -------------",
+          "id": "pushDeerConfig",
+          "name": "PushDeer 配置",
           "val": "",
           "type": "text",
-          "desc": "以下配置项仅在选择 PushDeer 通知渠道时有效"
+          "desc": "PushDeer 通知配置参数",
+          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
         },
         {
           "id": "pushDeerKey",
           "name": "PushDeer Key",
           "val": "",
           "type": "text",
-          "desc": "PushDeer 推送服务的 Key"
+          "desc": "PushDeer 推送服务的 Key",
+          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
         },
         {
           "id": "pushDeerUrl",
           "name": "PushDeer URL",
           "val": "https://api2.pushdeer.com/message/push",
           "type": "text",
-          "desc": "PushDeer 推送服务的 URL"
+          "desc": "PushDeer 推送服务的 URL",
+          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
         },
         {
-          "id": "barkKeyDesc",
-          "name": "------------- Bark 配置 -------------",
+          "id": "barkConfig",
+          "name": "Bark 配置",
           "val": "",
           "type": "text",
-          "desc": "以下配置项仅在选择 Bark 通知渠道时有效"
+          "desc": "Bark 通知配置参数",
+          "hiddenOn": "this.notifyChannel !== 'bark'"
         },
         {
           "id": "barkKey",
           "name": "Bark Key",
           "val": "",
           "type": "text",
-          "desc": "Bark 推送的 Key (即设备码)"
+          "desc": "Bark 推送的 Key (即设备码)",
+          "hiddenOn": "this.notifyChannel !== 'bark'"
         },
         {
           "id": "barkUrl",
           "name": "Bark URL",
           "val": "https://api.day.app",
           "type": "text",
-          "desc": "Bark 推送服务的 URL，自建服务器请修改"
+          "desc": "Bark 推送服务的 URL，自建服务器请修改",
+          "hiddenOn": "this.notifyChannel !== 'bark'"
         },
         {
-          "id": "telegramKeyDesc",
-          "name": "------------- Telegram 配置 -------------",
+          "id": "telegramConfig",
+          "name": "Telegram 配置",
           "val": "",
           "type": "text",
-          "desc": "以下配置项仅在选择 Telegram 通知渠道时有效"
+          "desc": "Telegram 通知配置参数",
+          "hiddenOn": "this.notifyChannel !== 'telegram'"
         },
         {
           "id": "telegramBotToken",
           "name": "Telegram Bot Token",
           "val": "",
           "type": "text",
-          "desc": "Telegram Bot 的 Token"
+          "desc": "Telegram Bot 的 Token",
+          "hiddenOn": "this.notifyChannel !== 'telegram'"
         },
         {
           "id": "telegramChatId",
           "name": "Telegram Chat ID",
           "val": "",
           "type": "text",
-          "desc": "Telegram 接收消息的 Chat ID"
+          "desc": "Telegram 接收消息的 Chat ID",
+          "hiddenOn": "this.notifyChannel !== 'telegram'"
         },
         {
-          "id": "serverChanKeyDesc",
-          "name": "------------- Server酱 配置 -------------",
+          "id": "serverChanConfig",
+          "name": "Server酱 配置",
           "val": "",
           "type": "text",
-          "desc": "以下配置项仅在选择 Server酱 通知渠道时有效"
+          "desc": "Server酱 通知配置参数",
+          "hiddenOn": "this.notifyChannel !== 'serverChan'"
         },
         {
           "id": "serverChanKey",
           "name": "Server酱 SendKey",
           "val": "",
           "type": "text",
-          "desc": "Server酱 的 SendKey"
+          "desc": "Server酱 的 SendKey",
+          "hiddenOn": "this.notifyChannel !== 'serverChan'"
         },
         {
-          "id": "pushPlusKeyDesc",
-          "name": "------------- PushPlus 配置 -------------",
+          "id": "pushPlusConfig",
+          "name": "PushPlus 配置",
           "val": "",
           "type": "text",
-          "desc": "以下配置项仅在选择 PushPlus 通知渠道时有效"
+          "desc": "PushPlus 通知配置参数",
+          "hiddenOn": "this.notifyChannel !== 'pushPlus'"
         },
         {
           "id": "pushPlusToken",
           "name": "PushPlus Token",
           "val": "",
           "type": "text",
-          "desc": "PushPlus 的 Token"
+          "desc": "PushPlus 的 Token",
+          "hiddenOn": "this.notifyChannel !== 'pushPlus'"
         },
         {
-          "id": "weworkKeyDesc",
-          "name": "------------- 企业微信 配置 -------------",
+          "id": "weworkConfig",
+          "name": "企业微信 配置",
           "val": "",
           "type": "text",
-          "desc": "以下配置项仅在选择 企业微信 通知渠道时有效"
+          "desc": "企业微信 通知配置参数",
+          "hiddenOn": "this.notifyChannel !== 'wework'"
         },
         {
           "id": "weworkKey",
           "name": "企业微信 WebHook",
           "val": "",
           "type": "text",
-          "desc": "企业微信群机器人的 WebHook URL"
-        },
-        {
-          "id": "emailKeyDesc",
-          "name": "------------- 邮件 配置 -------------",
-          "val": "",
-          "type": "text",
-          "desc": "以下配置项仅在选择 邮件 通知渠道时有效"
+          "desc": "企业微信群机器人的 WebHook URL",
+          "hiddenOn": "this.notifyChannel !== 'wework'"
         },
         {
           "id": "emailConfig",
@@ -299,7 +307,8 @@
           "val": "",
           "type": "text",
           "placeholder": "格式: 发件人邮箱,SMTP密码,SMTP服务器,SMTP端口,收件人邮箱",
-          "desc": "邮件推送配置，以逗号分隔"
+          "desc": "邮件推送配置，以逗号分隔",
+          "hiddenOn": "this.notifyChannel !== 'email'"
         },
         {
           "id": "historyHeader",
