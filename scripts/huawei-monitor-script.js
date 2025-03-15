@@ -1,9 +1,9 @@
 // 华为商城商品状态监控脚本 - 增强版
 // 支持多商品独立配置、价格变化通知、优惠价显示等增强功能
-// 新增功能：多渠道推送、价格历史记录、批量导入商品
+// 新增功能：多渠道推送、价格历史记录、批量导入商品、商品截图
 // 修复了预约申购状态商品被误判为促销商品的问题
 // 修复了价格历史记录相关功能的兼容性问题
-// 更新日期: 2025-03-15
+// 更新日期: 2025-03-16
 
 // ======== 基础配置功能 ========
 
@@ -195,6 +195,19 @@ function getConfig() {
   const debug = ($persistentStore.read("vmall.debug") === "true") || 
                 ($persistentStore.read("debug") === "true") || 
                 false;
+
+  // 读取截图相关配置 - 新增
+  const enableScreenshot = ($persistentStore.read("vmall.enableScreenshot") === "true") || 
+                          ($persistentStore.read("enableScreenshot") === "true") || 
+                          false;
+  
+  const screenshotApiService = $persistentStore.read("vmall.screenshotApiService") || 
+                              $persistentStore.read("screenshotApiService") || 
+                              "urlbox"; // 默认使用urlbox
+  
+  const screenshotApiKey = $persistentStore.read("vmall.screenshotApiKey") || 
+                          $persistentStore.read("screenshotApiKey") || 
+                          "";
   
   return {
     productLinks: productLinks,
@@ -203,7 +216,10 @@ function getConfig() {
     historyDays: historyDays,
     checkInterval: checkInterval,
     notifyOnlyOnChange: notifyOnlyOnChange,
-    debug: debug
+    debug: debug,
+    enableScreenshot: enableScreenshot,
+    screenshotApiService: screenshotApiService,
+    screenshotApiKey: screenshotApiKey
   };
 }
 
@@ -236,16 +252,186 @@ function processProductLink(link) {
   };
 }
 
+// ======== 截图功能 - 新增 ========
+
+// 获取网页截图函数
+function getPageScreenshot(url, callback) {
+  const config = getConfig();
+  
+  // 检查截图功能是否启用
+  if (!config.enableScreenshot) {
+    console.log("商品截图功能未启用");
+    callback(null);
+    return;
+  }
+  
+  // 检查API Key
+  if (!config.screenshotApiKey) {
+    console.log("截图API密钥未配置，无法获取截图");
+    callback(null);
+    return;
+  }
+  
+  let screenshotApiUrl = "";
+  
+  // 根据配置的API服务构建不同的请求URL
+  switch (config.screenshotApiService) {
+    case "urlbox":
+      // Urlbox API (https://urlbox.io/)
+      screenshotApiUrl = `https://api.urlbox.io/v1/render?token=${config.screenshotApiKey}&url=${encodeURIComponent(url)}&format=jpeg&width=800&height=1200&response_type=redirect&wait_until=networkidle0&device_scale=1.5&mobile=true`;
+      break;
+      
+    case "apiflash":
+      // ApiFlash API (https://apiflash.com/)
+      screenshotApiUrl = `https://api.apiflash.com/v1/urltoimage?access_key=${config.screenshotApiKey}&url=${encodeURIComponent(url)}&format=jpeg&quality=80&width=412&height=800&ttl=86400&fresh=true&response_type=json&full_page=false`;
+      break;
+    
+    case "screenshotapi":
+      // ScreenshotAPI.net (https://screenshotapi.net/)
+      screenshotApiUrl = `https://shot.screenshotapi.net/screenshot?token=${config.screenshotApiKey}&url=${encodeURIComponent(url)}&output=image&file_type=png&wait_for_event=load&device=mobile`;
+      break;
+      
+    case "screenshot-machine":
+      // Screenshot Machine (https://www.screenshotmachine.com/)
+      screenshotApiUrl = `https://api.screenshotmachine.com/?key=${config.screenshotApiKey}&url=${encodeURIComponent(url)}&dimension=412x800&device=mobile&format=jpg&cacheLimit=0`;
+      break;
+      
+    default:
+      // 默认使用urlbox
+      screenshotApiUrl = `https://api.urlbox.io/v1/render?token=${config.screenshotApiKey}&url=${encodeURIComponent(url)}&format=jpeg&width=800&height=1200&response_type=redirect&wait_until=networkidle0&device_scale=1.5&mobile=true`;
+  }
+  
+  console.log(`正在获取商品页面截图: ${url}`);
+  console.log(`使用API服务: ${config.screenshotApiService}`);
+  
+  // 发送截图请求
+  $httpClient.get({
+    url: screenshotApiUrl
+  }, function(error, response, data) {
+    if (error) {
+      console.log(`获取截图失败: ${error}`);
+      callback(null);
+      return;
+    }
+    
+    try {
+      // 不同的API服务可能有不同的返回格式
+      if (config.screenshotApiService === "apiflash") {
+        // ApiFlash返回JSON
+        const result = JSON.parse(data);
+        if (result && result.url) {
+          console.log(`成功获取截图，URL: ${result.url}`);
+          callback(result.url);
+        } else {
+          console.log(`获取截图失败: 返回格式不正确`);
+          callback(null);
+        }
+      } else if (config.screenshotApiService === "screenshotapi") {
+        // ScreenshotAPI.net可能返回JSON
+        try {
+          const result = JSON.parse(data);
+          if (result && result.screenshot) {
+            console.log(`成功获取截图，URL: ${result.screenshot}`);
+            callback(result.screenshot);
+          } else {
+            console.log(`获取截图失败: 返回格式不正确`);
+            callback(null);
+          }
+        } catch {
+          // 直接返回图片数据，这种情况下response的URL就是截图URL
+          if (response && response.url) {
+            console.log(`成功获取截图，URL: ${response.url}`);
+            callback(response.url);
+          } else {
+            console.log(`获取截图失败: 无法确定截图URL`);
+            callback(null);
+          }
+        }
+      } else {
+        // Urlbox和Screenshot Machine等服务直接返回图片或重定向
+        if (response && response.url) {
+          console.log(`成功获取截图，URL: ${response.url}`);
+          callback(response.url);
+        } else {
+          console.log(`获取截图失败: 无法确定截图URL`);
+          callback(null);
+        }
+      }
+    } catch (e) {
+      console.log(`解析截图结果失败: ${e}`);
+      callback(null);
+    }
+  });
+}
+
+// 后台缓存多个商品的截图
+function cacheProductScreenshots(productLinks, callback) {
+  const config = getConfig();
+  
+  // 如果截图功能未启用，直接返回
+  if (!config.enableScreenshot || !config.screenshotApiKey) {
+    console.log("商品截图功能未启用或API密钥未配置，跳过缓存截图");
+    callback && callback({});
+    return;
+  }
+  
+  console.log(`开始缓存 ${productLinks.length} 个商品的截图`);
+  
+  // 缓存结果
+  const screenshotCache = {};
+  let completedCount = 0;
+  
+  // 处理每个商品
+  for (let i = 0; i < productLinks.length; i++) {
+    const productLink = productLinks[i];
+    if (!productLink.enabled) {
+      completedCount++;
+      continue;
+    }
+    
+    // 获取标准化URL
+    const productInfo = processProductLink(productLink.url);
+    const url = productInfo.url;
+    const id = productInfo.id;
+    
+    // 获取截图
+    getPageScreenshot(url, function(screenshotUrl) {
+      if (screenshotUrl) {
+        screenshotCache[id] = screenshotUrl;
+        console.log(`商品 ${id} 截图已缓存`);
+      }
+      
+      // 增加已完成计数
+      completedCount++;
+      
+      // 检查是否所有商品都已处理
+      if (completedCount >= productLinks.length) {
+        console.log(`所有商品截图缓存完成，共成功缓存 ${Object.keys(screenshotCache).length} 个截图`);
+        callback && callback(screenshotCache);
+      }
+    });
+  }
+}
+
 // ======== 多渠道推送功能 ========
 
-// 通用发送通知函数 - 支持多渠道
-function sendNotification(title, content, callback) {
+// 通用发送通知函数 - 支持多渠道和截图
+function sendNotification(title, content, options, callback) {
   const config = getConfig();
   const notifyChannels = config.notifyChannels;
   
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  
+  // 确保options对象存在
+  options = options || {};
+  
   if (!notifyChannels || notifyChannels.length === 0) {
     console.log("未配置任何通知渠道，使用默认渠道 PushDeer");
-    sendPushDeerNotification(title, content, callback);
+    sendPushDeerNotification(title, content, options, callback);
     return;
   }
   
@@ -257,7 +443,7 @@ function sendNotification(title, content, callback) {
     console.log(`使用单一渠道 ${channel} 发送通知`);
     
     // 根据配置的通知渠道选择对应的发送函数
-    sendToChannel(channel, title, content, callback);
+    sendToChannel(channel, title, content, options, callback);
     return;
   }
   
@@ -280,7 +466,7 @@ function sendNotification(title, content, callback) {
     const channelCallback = isLastChannel ? callback : sendToNextChannel;
     
     // 发送到指定渠道
-    sendToChannel(channel, title, content, function() {
+    sendToChannel(channel, title, content, options, function() {
       // 处理完当前渠道，递增索引并发送到下一个渠道
       channelIndex++;
       
@@ -294,38 +480,45 @@ function sendNotification(title, content, callback) {
 }
 
 // 辅助函数：根据渠道名称选择对应的发送函数
-function sendToChannel(channel, title, content, callback) {
+function sendToChannel(channel, title, content, options, callback) {
   switch (channel) {
     case "pushDeer":
-      sendPushDeerNotification(title, content, callback);
+      sendPushDeerNotification(title, content, options, callback);
       break;
     case "bark":
-      sendBarkNotification(title, content, callback);
+      sendBarkNotification(title, content, options, callback);
       break;
     case "telegram":
-      sendTelegramNotification(title, content, callback);
+      sendTelegramNotification(title, content, options, callback);
       break;
     case "serverChan":
-      sendServerChanNotification(title, content, callback);
+      sendServerChanNotification(title, content, options, callback);
       break;
     case "pushPlus":
-      sendPushPlusNotification(title, content, callback);
+      sendPushPlusNotification(title, content, options, callback);
       break;
     case "wework":
-      sendWeworkNotification(title, content, callback);
+      sendWeworkNotification(title, content, options, callback);
       break;
     case "email":
-      sendEmailNotification(title, content, callback);
+      sendEmailNotification(title, content, options, callback);
       break;
     default:
       // 默认使用PushDeer
       console.log(`未知渠道 ${channel}，使用默认渠道 PushDeer`);
-      sendPushDeerNotification(title, content, callback);
+      sendPushDeerNotification(title, content, options, callback);
   }
 }
 
-// 发送PushDeer通知函数
-function sendPushDeerNotification(title, content, callback) {
+// 发送PushDeer通知函数 - 支持截图
+function sendPushDeerNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 尝试读取PushDeer配置
   const pushDeerKey = getPushDeerKey();
   const pushDeerUrl = $persistentStore.read("vmall.notification.pushDeerUrl") || 
@@ -352,10 +545,17 @@ function sendPushDeerNotification(title, content, callback) {
     return;
   }
 
+  // 如果有截图URL，添加到内容中
+  let updatedContent = content;
+  if (options.screenshotUrl) {
+    // 在内容末尾添加截图
+    updatedContent += `\n\n![商品截图](${options.screenshotUrl})`;
+  }
+
   const postData = {
     "pushkey": pushDeerKey,
     "text": title,
-    "desp": content,
+    "desp": updatedContent,
     "type": "markdown"
   };
   
@@ -376,8 +576,15 @@ function sendPushDeerNotification(title, content, callback) {
   });
 }
 
-// 发送Bark通知函数
-function sendBarkNotification(title, content, callback) {
+// 发送Bark通知函数 - 支持截图
+function sendBarkNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 读取Bark配置
   const barkKey = $persistentStore.read("vmall.notification.barkKey") || 
                   $persistentStore.read("vmall.barkKey") || 
@@ -406,6 +613,11 @@ function sendBarkNotification(title, content, callback) {
   // 添加参数
   url += "?isArchive=1&sound=bell";
   
+  // 如果有截图，添加图片参数
+  if (options.screenshotUrl) {
+    url += `&url=${encodeURIComponent(options.screenshotUrl)}`;
+  }
+  
   $httpClient.get({
     url: url
   }, function(error, response, data) {
@@ -419,8 +631,15 @@ function sendBarkNotification(title, content, callback) {
   });
 }
 
-// 发送Telegram通知函数
-function sendTelegramNotification(title, content, callback) {
+// 发送Telegram通知函数 - 支持截图
+function sendTelegramNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 读取Telegram配置
   const telegramBotToken = $persistentStore.read("vmall.notification.telegramBotToken") || 
                            $persistentStore.read("vmall.telegramBotToken") || 
@@ -443,16 +662,31 @@ function sendTelegramNotification(title, content, callback) {
   }
   
   // 组合标题和内容
-  const text = `*${title}*\n\n${content}`;
+  let text = `*${title}*\n\n${content}`;
   
   // 构建请求
-  const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
-  const postData = {
-    "chat_id": telegramChatId,
-    "text": text,
-    "parse_mode": "Markdown",
-    "disable_web_page_preview": true
-  };
+  let postData = null;
+  let url = "";
+  
+  if (options.screenshotUrl) {
+    // 发送图片消息
+    url = `https://api.telegram.org/bot${telegramBotToken}/sendPhoto`;
+    postData = {
+      "chat_id": telegramChatId,
+      "photo": options.screenshotUrl,
+      "caption": `*${title}*\n\n${content.substring(0, 1000)}`, // Telegram限制caption长度
+      "parse_mode": "Markdown"
+    };
+  } else {
+    // 发送普通文本消息
+    url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+    postData = {
+      "chat_id": telegramChatId,
+      "text": text,
+      "parse_mode": "Markdown",
+      "disable_web_page_preview": true
+    };
+  }
   
   $httpClient.post({
     url: url,
@@ -471,8 +705,15 @@ function sendTelegramNotification(title, content, callback) {
   });
 }
 
-// 发送Server酱通知函数
-function sendServerChanNotification(title, content, callback) {
+// 发送Server酱通知函数 - 支持截图
+function sendServerChanNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 读取Server酱配置
   const serverChanKey = $persistentStore.read("vmall.notification.serverChanKey") || 
                        $persistentStore.read("vmall.serverChanKey") || 
@@ -491,9 +732,15 @@ function sendServerChanNotification(title, content, callback) {
     return;
   }
   
+  // 如果有截图，添加到内容中
+  let updatedContent = content;
+  if (options.screenshotUrl) {
+    updatedContent += `\n\n![商品截图](${options.screenshotUrl})`;
+  }
+  
   // 构建请求
   const url = `https://sctapi.ftqq.com/${serverChanKey}.send`;
-  const body = `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(content)}`;
+  const body = `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(updatedContent)}`;
   
   $httpClient.post({
     url: url,
@@ -512,8 +759,15 @@ function sendServerChanNotification(title, content, callback) {
   });
 }
 
-// 发送PushPlus通知函数
-function sendPushPlusNotification(title, content, callback) {
+// 发送PushPlus通知函数 - 支持截图
+function sendPushPlusNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 读取PushPlus配置
   const pushPlusToken = $persistentStore.read("vmall.notification.pushPlusToken") || 
                        $persistentStore.read("vmall.pushPlusToken") || 
@@ -532,12 +786,18 @@ function sendPushPlusNotification(title, content, callback) {
     return;
   }
   
+  // 如果有截图，添加到内容中
+  let updatedContent = content;
+  if (options.screenshotUrl) {
+    updatedContent += `\n\n![商品截图](${options.screenshotUrl})`;
+  }
+  
   // 构建请求
   const url = "https://www.pushplus.plus/send";
   const postData = {
     "token": pushPlusToken,
     "title": title,
-    "content": content,
+    "content": updatedContent,
     "template": "markdown"
   };
   
@@ -558,8 +818,15 @@ function sendPushPlusNotification(title, content, callback) {
   });
 }
 
-// 发送企业微信通知函数
-function sendWeworkNotification(title, content, callback) {
+// 发送企业微信通知函数 - 支持截图
+function sendWeworkNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 读取企业微信配置
   const weworkKey = $persistentStore.read("vmall.notification.weworkKey") || 
                    $persistentStore.read("vmall.weworkKey") || 
@@ -578,14 +845,36 @@ function sendWeworkNotification(title, content, callback) {
     return;
   }
   
+  let postData = null;
+  
+  // 根据是否有截图选择消息类型
+  if (options.screenshotUrl) {
+    // 使用图文消息
+    postData = {
+      "msgtype": "news",
+      "news": {
+        "articles": [
+          {
+            "title": title,
+            "description": content.substring(0, 512), // 企业微信限制长度
+            "url": "https://work.weixin.qq.com",
+            "picurl": options.screenshotUrl
+          }
+        ]
+      }
+    };
+  } else {
+    // 使用markdown消息
+    postData = {
+      "msgtype": "markdown",
+      "markdown": {
+        "content": `# ${title}\n${content}`
+      }
+    };
+  }
+  
   // 构建请求
   const url = weworkKey;
-  const postData = {
-    "msgtype": "markdown",
-    "markdown": {
-      "content": `# ${title}\n${content}`
-    }
-  };
   
   $httpClient.post({
     url: url,
@@ -604,8 +893,15 @@ function sendWeworkNotification(title, content, callback) {
   });
 }
 
-// 发送邮件通知函数 (简化版，需要使用第三方SMTP服务)
-function sendEmailNotification(title, content, callback) {
+// 发送邮件通知函数 (简化版，需要使用第三方SMTP服务) - 支持截图
+function sendEmailNotification(title, content, options, callback) {
+  // 处理可选参数
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+  
   // 读取邮件配置
   const emailConfig = $persistentStore.read("vmall.notification.emailConfig") || 
                      $persistentStore.read("vmall.emailConfig") || 
@@ -636,6 +932,11 @@ function sendEmailNotification(title, content, callback) {
     
     callback && callback();
     return;
+  }
+  
+  // 截图功能提示
+  if (options.screenshotUrl) {
+    console.log("邮件通知中的截图需要通过第三方邮件API支持");
   }
   
   const fromEmail = configArray[0];
@@ -1634,7 +1935,7 @@ function extractPageInfo(html) {
   };
 }
 
-// 检查单个商品
+// 修改检查单个商品函数以支持截图
 function checkSingleProduct(productLink, allResults, index, totalCount, finalCallback) {
   if (!productLink.enabled) {
     console.log(`商品链接 ${productLink.url} 已禁用，跳过检查`);
@@ -1713,6 +2014,7 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
   }, function(error, response, data) {
     let result = {
       url: url,
+      id: id, // 添加ID字段，用于截图匹配
       success: false,
       message: "",
       productName: lastProductName || "未知商品",
@@ -1777,14 +2079,40 @@ function checkSingleProduct(productLink, allResults, index, totalCount, finalCal
     // 添加结果
     allResults.push(result);
     
-    // 检查是否完成所有商品
-    if (index === totalCount - 1) {
-      // 所有商品检查完毕
-      finalCallback(allResults);
+    // 获取截图 - 只有在状态或价格变化且功能启用时才获取
+    const config = getConfig();
+    if (config.enableScreenshot && result.success && (result.hasChanged || result.priceChanged)) {
+      console.log(`商品 ${result.productName} 状态已变化，获取截图...`);
+      
+      getPageScreenshot(url, function(screenshotUrl) {
+        // 添加截图URL到结果
+        if (screenshotUrl) {
+          result.screenshotUrl = screenshotUrl;
+          console.log(`已获取商品 ${result.productName} 的截图: ${screenshotUrl}`);
+        } else {
+          console.log(`无法获取商品 ${result.productName} 的截图`);
+        }
+        
+        // 检查是否完成所有商品
+        if (index === totalCount - 1) {
+          // 所有商品检查完毕
+          finalCallback(allResults);
+        } else {
+          // 继续检查下一个商品
+          const nextProduct = getConfig().productLinks[index + 1];
+          checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
+        }
+      });
     } else {
-      // 继续检查下一个商品
-      const nextProduct = getConfig().productLinks[index + 1];
-      checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
+      // 如果不需要截图或没有变化，直接处理下一个商品
+      if (index === totalCount - 1) {
+        // 所有商品检查完毕
+        finalCallback(allResults);
+      } else {
+        // 继续检查下一个商品
+        const nextProduct = getConfig().productLinks[index + 1];
+        checkSingleProduct(nextProduct, allResults, index + 1, totalCount, finalCallback);
+      }
     }
   });
 }
@@ -1801,7 +2129,7 @@ function formatPriceChange(diff) {
   return diff > 0 ? `↑涨价${diff.toFixed(2)}元` : `↓降价${Math.abs(diff).toFixed(2)}元`;
 }
 
-// 发送汇总通知 - 增强版 (修改使用新的通用通知函数)
+// 修改发送汇总通知函数以支持截图 
 function sendSummaryNotification(results) {
   const config = getConfig();
   
@@ -1848,6 +2176,11 @@ function sendSummaryNotification(results) {
       }
       
       summaryContent += `- **检查时间**: ${new Date().toLocaleString("zh-CN")}\n\n`;
+      
+      // 如果该商品有截图，添加截图标记（实际图片会在最后添加，避免内容过长）
+      if (result.screenshotUrl) {
+        summaryContent += `- **商品截图**: [查看下方截图](#screenshot-${index + 1})\n\n`;
+      }
     }
   } else {
     summaryTitle = "✅ 商品状态检查完成";
@@ -1905,8 +2238,30 @@ function sendSummaryNotification(results) {
     }
   }
   
+  // 添加截图展示区 - 如果有任何商品包含截图
+  let hasScreenshots = false;
+  for (let index = 0; index < changedProducts.length; index++) {
+    if (changedProducts[index].screenshotUrl) {
+      if (!hasScreenshots) {
+        summaryContent += "## 📸 商品截图区\n\n";
+        hasScreenshots = true;
+      }
+      // 添加锚点和标题
+      summaryContent += `<a id="screenshot-${index + 1}"></a>\n\n`;
+      summaryContent += `### 截图 ${index + 1}: ${changedProducts[index].productName}\n\n`;
+      // 添加截图
+      summaryContent += `![商品截图](${changedProducts[index].screenshotUrl})\n\n`;
+    }
+  }
+  
+  // 确定是否有任何要提供给通知的截图
+  let notificationOptions = {};
+  if (changedProducts.length > 0 && changedProducts[0].screenshotUrl) {
+    notificationOptions.screenshotUrl = changedProducts[0].screenshotUrl;
+  }
+  
   // 使用通用通知函数发送通知
-  sendNotification(summaryTitle, summaryContent, function() {
+  sendNotification(summaryTitle, summaryContent, notificationOptions, function() {
     // 对于变化的商品，发送弹窗通知 - 无论是状态变化还是价格变化
     if (changedProducts.length > 0) {
       for (let i = 0; i < changedProducts.length; i++) {
@@ -1953,11 +2308,18 @@ function sendSummaryNotification(results) {
         
         notificationBody += `检查时间: ${new Date().toLocaleString("zh-CN")}`;
         
+        // 添加有截图链接的内容
+        let openUrl = result.url;
+        if (result.screenshotUrl) {
+          openUrl = result.screenshotUrl;
+          notificationBody += "\n\n点击查看商品截图";
+        }
+        
         $notification.post(
           title,
           `${result.productName}`,
           notificationBody,
-          { url: result.url }
+          { url: openUrl }
         );
       }
     }
@@ -2026,9 +2388,60 @@ function testPushDeer() {
   );
 }
 
-// ======== 主入口函数 ========
+// 测试函数 - 仅用于测试截图功能
+function testScreenshot(url) {
+  console.log(`测试截图功能，URL: ${url}`);
+  
+  const config = getConfig();
+  if (!config.enableScreenshot) {
+    $notification.post(
+      "测试失败", 
+      "截图功能未启用", 
+      "请在BoxJS中启用截图功能"
+    );
+    $done();
+    return;
+  }
+  
+  if (!config.screenshotApiKey) {
+    $notification.post(
+      "测试失败", 
+      "截图API密钥未配置", 
+      "请在BoxJS中配置截图API密钥"
+    );
+    $done();
+    return;
+  }
+  
+  // 获取截图
+  getPageScreenshot(url, function(screenshotUrl) {
+    if (screenshotUrl) {
+      // 发送通知
+      sendNotification(
+        "截图测试成功", 
+        `已成功获取商品页面截图\n\n截图URL: ${screenshotUrl}\n\n使用的API服务: ${config.screenshotApiService}`,
+        { screenshotUrl: screenshotUrl },
+        function() {
+          $notification.post(
+            "截图测试成功", 
+            "已成功获取商品页面截图", 
+            "请查看通知详情"
+          );
+          $done();
+        }
+      );
+    } else {
+      $notification.post(
+        "截图测试失败", 
+        "无法获取商品页面截图", 
+        `请检查API服务和密钥配置，当前服务: ${config.screenshotApiService}`
+      );
+      $done();
+    }
+  });
+}
 
-// 主函数 - 根据参数决定执行哪个功能
+// 主入口函数 - 修改以支持截图测试
 function handleArguments() {
   const args = typeof $argument !== 'undefined' ? $argument : '';
   
@@ -2058,11 +2471,31 @@ function handleArguments() {
       // 显示所有商品的历史汇总
       showAllPriceHistory();
     }
+  } else if (args.includes('testScreenshot')) {
+    // 测试截图功能
+    let url = args.match(/url=([^&]+)/);
+    if (url && url[1]) {
+      url = decodeURIComponent(url[1]);
+      testScreenshot(url);
+    } else {
+      // 使用默认第一个商品
+      const config = getConfig();
+      if (config.productLinks && config.productLinks.length > 0) {
+        testScreenshot(config.productLinks[0].url);
+      } else {
+        $notification.post(
+          "测试失败", 
+          "无法找到商品URL", 
+          "请提供测试URL或在BoxJS中配置至少一个商品"
+        );
+        $done();
+      }
+    }
   } else {
     // 执行主函数 - 检查商品状态
     checkAllProducts();
   }
 }
 
-// 检查命令行参数，决定执行哪个功能
+// 执行主入口函数
 handleArguments();
