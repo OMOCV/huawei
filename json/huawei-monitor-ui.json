@@ -25,16 +25,6 @@
         "product5Url",
         "product5Enabled",
         "notifyChannel",
-        "pushDeerKey",
-        "pushDeerUrl",
-        "barkKey",
-        "barkUrl",
-        "telegramBotToken",
-        "telegramChatId",
-        "serverChanKey",
-        "pushPlusToken",
-        "emailConfig",
-        "weworkKey",
         "saveHistory",
         "historyDays",
         "checkInterval",
@@ -142,7 +132,7 @@
           "name": "🔔 通知设置",
           "val": "",
           "type": "text",
-          "desc": "选择并配置通知推送渠道"
+          "desc": "选择通知渠道并配置"
         },
         {
           "id": "notifyChannel",
@@ -179,136 +169,14 @@
               "label": "邮件"
             }
           ],
-          "desc": "选择通知推送渠道，选择后可配置对应的详细参数"
+          "desc": "选择通知推送渠道"
         },
         {
-          "id": "pushDeerConfig",
-          "name": "PushDeer 配置",
+          "id": "notifyConfigLink",
+          "name": "⚙️ 配置通知详情",
           "val": "",
           "type": "text",
-          "desc": "PushDeer 通知配置参数",
-          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
-        },
-        {
-          "id": "pushDeerKey",
-          "name": "PushDeer Key",
-          "val": "",
-          "type": "text",
-          "desc": "PushDeer 推送服务的 Key",
-          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
-        },
-        {
-          "id": "pushDeerUrl",
-          "name": "PushDeer URL",
-          "val": "https://api2.pushdeer.com/message/push",
-          "type": "text",
-          "desc": "PushDeer 推送服务的 URL",
-          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
-        },
-        {
-          "id": "barkConfig",
-          "name": "Bark 配置",
-          "val": "",
-          "type": "text",
-          "desc": "Bark 通知配置参数",
-          "hiddenOn": "this.notifyChannel !== 'bark'"
-        },
-        {
-          "id": "barkKey",
-          "name": "Bark Key",
-          "val": "",
-          "type": "text",
-          "desc": "Bark 推送的 Key (即设备码)",
-          "hiddenOn": "this.notifyChannel !== 'bark'"
-        },
-        {
-          "id": "barkUrl",
-          "name": "Bark URL",
-          "val": "https://api.day.app",
-          "type": "text",
-          "desc": "Bark 推送服务的 URL，自建服务器请修改",
-          "hiddenOn": "this.notifyChannel !== 'bark'"
-        },
-        {
-          "id": "telegramConfig",
-          "name": "Telegram 配置",
-          "val": "",
-          "type": "text",
-          "desc": "Telegram 通知配置参数",
-          "hiddenOn": "this.notifyChannel !== 'telegram'"
-        },
-        {
-          "id": "telegramBotToken",
-          "name": "Telegram Bot Token",
-          "val": "",
-          "type": "text",
-          "desc": "Telegram Bot 的 Token",
-          "hiddenOn": "this.notifyChannel !== 'telegram'"
-        },
-        {
-          "id": "telegramChatId",
-          "name": "Telegram Chat ID",
-          "val": "",
-          "type": "text",
-          "desc": "Telegram 接收消息的 Chat ID",
-          "hiddenOn": "this.notifyChannel !== 'telegram'"
-        },
-        {
-          "id": "serverChanConfig",
-          "name": "Server酱 配置",
-          "val": "",
-          "type": "text",
-          "desc": "Server酱 通知配置参数",
-          "hiddenOn": "this.notifyChannel !== 'serverChan'"
-        },
-        {
-          "id": "serverChanKey",
-          "name": "Server酱 SendKey",
-          "val": "",
-          "type": "text",
-          "desc": "Server酱 的 SendKey",
-          "hiddenOn": "this.notifyChannel !== 'serverChan'"
-        },
-        {
-          "id": "pushPlusConfig",
-          "name": "PushPlus 配置",
-          "val": "",
-          "type": "text",
-          "desc": "PushPlus 通知配置参数",
-          "hiddenOn": "this.notifyChannel !== 'pushPlus'"
-        },
-        {
-          "id": "pushPlusToken",
-          "name": "PushPlus Token",
-          "val": "",
-          "type": "text",
-          "desc": "PushPlus 的 Token",
-          "hiddenOn": "this.notifyChannel !== 'pushPlus'"
-        },
-        {
-          "id": "weworkConfig",
-          "name": "企业微信 配置",
-          "val": "",
-          "type": "text",
-          "desc": "企业微信 通知配置参数",
-          "hiddenOn": "this.notifyChannel !== 'wework'"
-        },
-        {
-          "id": "weworkKey",
-          "name": "企业微信 WebHook",
-          "val": "",
-          "type": "text",
-          "desc": "企业微信群机器人的 WebHook URL",
-          "hiddenOn": "this.notifyChannel !== 'wework'"
-        },
-        {
-          "id": "emailConfig",
-          "name": "邮件配置",
-          "val": "",
-          "type": "text",
-          "placeholder": "格式: 发件人邮箱,SMTP密码,SMTP服务器,SMTP端口,收件人邮箱",
-          "desc": "邮件推送配置，以逗号分隔",
-          "hiddenOn": "this.notifyChannel !== 'email'"
+          "desc": "点击下方按钮配置所选通知渠道的详细参数"
         },
         {
           "id": "historyHeader",
@@ -379,6 +247,248 @@
           "name": "查看价格历史",
           "script": "https://raw.githubusercontent.com/OMOCV/huawei/main/scripts/huawei-monitor-script.js",
           "argument": "showHistory"
+        },
+        {
+          "name": "配置 PushDeer",
+          "url": "http://boxjs.com/#/app/vmall.notification.pushDeer",
+          "hiddenOn": "this.notifyChannel !== 'pushDeer'"
+        },
+        {
+          "name": "配置 Bark",
+          "url": "http://boxjs.com/#/app/vmall.notification.bark",
+          "hiddenOn": "this.notifyChannel !== 'bark'"
+        },
+        {
+          "name": "配置 Telegram",
+          "url": "http://boxjs.com/#/app/vmall.notification.telegram",
+          "hiddenOn": "this.notifyChannel !== 'telegram'"
+        },
+        {
+          "name": "配置 Server酱",
+          "url": "http://boxjs.com/#/app/vmall.notification.serverChan",
+          "hiddenOn": "this.notifyChannel !== 'serverChan'"
+        },
+        {
+          "name": "配置 PushPlus",
+          "url": "http://boxjs.com/#/app/vmall.notification.pushPlus",
+          "hiddenOn": "this.notifyChannel !== 'pushPlus'"
+        },
+        {
+          "name": "配置 企业微信",
+          "url": "http://boxjs.com/#/app/vmall.notification.wework",
+          "hiddenOn": "this.notifyChannel !== 'wework'"
+        },
+        {
+          "name": "配置 邮件通知",
+          "url": "http://boxjs.com/#/app/vmall.notification.email",
+          "hiddenOn": "this.notifyChannel !== 'email'"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.pushDeer",
+      "name": "PushDeer 通知配置",
+      "descs_html": [
+        "PushDeer 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "pushDeerKey",
+        "pushDeerUrl"
+      ],
+      "settings": [
+        {
+          "id": "pushDeerKey",
+          "name": "PushDeer Key",
+          "val": "",
+          "type": "text",
+          "desc": "PushDeer 推送服务的 Key"
+        },
+        {
+          "id": "pushDeerUrl",
+          "name": "PushDeer URL",
+          "val": "https://api2.pushdeer.com/message/push",
+          "type": "text",
+          "desc": "PushDeer 推送服务的 URL"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.bark",
+      "name": "Bark 通知配置",
+      "descs_html": [
+        "Bark 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "barkKey",
+        "barkUrl"
+      ],
+      "settings": [
+        {
+          "id": "barkKey",
+          "name": "Bark Key",
+          "val": "",
+          "type": "text",
+          "desc": "Bark 推送的 Key (即设备码)"
+        },
+        {
+          "id": "barkUrl",
+          "name": "Bark URL",
+          "val": "https://api.day.app",
+          "type": "text",
+          "desc": "Bark 推送服务的 URL，自建服务器请修改"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.telegram",
+      "name": "Telegram 通知配置",
+      "descs_html": [
+        "Telegram 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "telegramBotToken",
+        "telegramChatId"
+      ],
+      "settings": [
+        {
+          "id": "telegramBotToken",
+          "name": "Telegram Bot Token",
+          "val": "",
+          "type": "text",
+          "desc": "Telegram Bot 的 Token"
+        },
+        {
+          "id": "telegramChatId",
+          "name": "Telegram Chat ID",
+          "val": "",
+          "type": "text",
+          "desc": "Telegram 接收消息的 Chat ID"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.serverChan",
+      "name": "Server酱 通知配置",
+      "descs_html": [
+        "Server酱 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "serverChanKey"
+      ],
+      "settings": [
+        {
+          "id": "serverChanKey",
+          "name": "Server酱 SendKey",
+          "val": "",
+          "type": "text",
+          "desc": "Server酱 的 SendKey"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.pushPlus",
+      "name": "PushPlus 通知配置",
+      "descs_html": [
+        "PushPlus 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "pushPlusToken"
+      ],
+      "settings": [
+        {
+          "id": "pushPlusToken",
+          "name": "PushPlus Token",
+          "val": "",
+          "type": "text",
+          "desc": "PushPlus 的 Token"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.wework",
+      "name": "企业微信 通知配置",
+      "descs_html": [
+        "企业微信 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "weworkKey"
+      ],
+      "settings": [
+        {
+          "id": "weworkKey",
+          "name": "企业微信 WebHook",
+          "val": "",
+          "type": "text",
+          "desc": "企业微信群机器人的 WebHook URL"
+        }
+      ],
+      "author": "@Claude",
+      "repo": "",
+      "icons": [
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png",
+        "https://raw.githubusercontent.com/OMOCV/huawei/main/Icon/Vmall.png"
+      ]
+    },
+    {
+      "id": "vmall.notification.email",
+      "name": "邮件 通知配置",
+      "descs_html": [
+        "邮件 通知渠道配置",
+        "完成后请返回主页面"
+      ],
+      "keys": [
+        "emailConfig"
+      ],
+      "settings": [
+        {
+          "id": "emailConfig",
+          "name": "邮件配置",
+          "val": "",
+          "type": "text",
+          "placeholder": "格式: 发件人邮箱,SMTP密码,SMTP服务器,SMTP端口,收件人邮箱",
+          "desc": "邮件推送配置，以逗号分隔"
         }
       ],
       "author": "@Claude",
