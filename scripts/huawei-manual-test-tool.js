@@ -24,7 +24,7 @@ function getConfig() {
   };
 }
 
-// 读取PushDeer Key - 兼容多种键名
+// 读取PushDeer Key - 兼容多种键名 (已修复兼容性)
 function getPushDeerKey() {
   // 尝试多种可能的键名
   const possibleKeys = [
@@ -35,8 +35,9 @@ function getPushDeerKey() {
     "pushkey"             // 可能的其他写法
   ];
   
-  // 尝试所有可能的键名
-  for (const key of possibleKeys) {
+  // 替换 for...of 循环为普通 for 循环
+  for (let i = 0; i < possibleKeys.length; i++) {
+    const key = possibleKeys[i];
     const value = $persistentStore.read(key);
     console.log(`尝试读取键名 ${key}: "${value ? '有值' : '未找到'}"`);
     
@@ -416,7 +417,11 @@ function sendEmailNotification(title, content, callback) {
     return;
   }
   
-  const [fromEmail, password, smtpServer, smtpPort, toEmail] = configArray;
+  const fromEmail = configArray[0];
+  const password = configArray[1];
+  const smtpServer = configArray[2];
+  const smtpPort = configArray[3];
+  const toEmail = configArray[4];
   
   // 由于Surge等环境通常不支持直接发送邮件，这里我们使用一个假设的第三方API
   // 实际场景中，您可能需要使用支持SMTP的第三方服务
@@ -587,7 +592,8 @@ function extractPageInfo(html) {
     if (nextDataMatch && nextDataMatch[1]) {
       try {
         const jsonData = JSON.parse(nextDataMatch[1]);
-        const mainData = jsonData.props?.pageProps?.mainData;
+        // 修复可选链使用
+        const mainData = jsonData.props && jsonData.props.pageProps && jsonData.props.pageProps.mainData;
         if (mainData && mainData.current && mainData.current.base) {
           // 尝试获取第一个产品对象
           const products = Object.values(mainData.current.base);

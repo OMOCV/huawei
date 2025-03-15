@@ -7,16 +7,17 @@
 
 // ======== 基础配置功能 ========
 
-// 解析链接文本为结构化数据 - 加强版，支持额外格式
+// 解析链接文本为结构化数据 - 加强版，支持额外格式 (已修复兼容性)
 function parseLinksText(text) {
   if (!text) return [];
   
   // 分割文本为行
-  const lines = text.split('\n').filter(line => line.trim());
+  const lines = text.split('\n').filter(function(line) { return line.trim(); });
   const result = [];
   
-  // 处理每一行
-  lines.forEach(line => {
+  // 处理每一行 - 替换 forEach 为普通 for 循环
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
     // 检查是否包含启用/禁用标记
     let url = line.trim();
     let enabled = true;
@@ -46,12 +47,12 @@ function parseLinksText(text) {
         name: name // 可选字段
       });
     }
-  });
+  }
   
   return result;
 }
 
-// 读取PushDeer Key - 兼容多种键名
+// 读取PushDeer Key - 兼容多种键名 (已修复兼容性)
 function getPushDeerKey() {
   // 尝试多种可能的键名
   const possibleKeys = [
@@ -62,8 +63,9 @@ function getPushDeerKey() {
     "pushkey"             // 可能的其他写法
   ];
   
-  // 尝试所有可能的键名
-  for (const key of possibleKeys) {
+  // 替换 for...of 循环为普通 for 循环
+  for (let i = 0; i < possibleKeys.length; i++) {
+    const key = possibleKeys[i];
     const value = $persistentStore.read(key);
     console.log(`尝试读取键名 ${key}: "${value ? '有值' : '未找到'}"`);
     
@@ -135,7 +137,9 @@ function getConfig() {
     
     // 使用解析函数解析链接文本
     const oldLinks = parseLinksText(linksText);
-    productLinks.push(...oldLinks);
+    for (let i = 0; i < oldLinks.length; i++) {
+      productLinks.push(oldLinks[i]);
+    }
   }
   
   console.log(`共读取到 ${productLinks.length} 个商品链接`);
@@ -560,7 +564,11 @@ function sendEmailNotification(title, content, callback) {
     return;
   }
   
-  const [fromEmail, password, smtpServer, smtpPort, toEmail] = configArray;
+  const fromEmail = configArray[0];
+  const password = configArray[1];
+  const smtpServer = configArray[2];
+  const smtpPort = configArray[3]; 
+  const toEmail = configArray[4];
   
   // 由于Surge等环境通常不支持直接发送邮件，这里我们使用一个假设的第三方API
   // 实际场景中，您可能需要使用支持SMTP的第三方服务
@@ -925,8 +933,10 @@ function showAllPriceHistory() {
   // 收集所有商品的历史记录
   const allProductHistories = [];
   
-  productLinks.forEach(productLink => {
-    if (!productLink.enabled) return;
+  // 替换 forEach 为普通 for 循环
+  for (let i = 0; i < productLinks.length; i++) {
+    const productLink = productLinks[i];
+    if (!productLink.enabled) continue;
     
     // 获取商品ID
     const productInfo = processProductLink(productLink.url);
@@ -937,7 +947,7 @@ function showAllPriceHistory() {
     if (history) {
       allProductHistories.push(history);
     }
-  });
+  }
   
   if (allProductHistories.length === 0) {
     $notification.post(
@@ -1066,7 +1076,7 @@ function showAllPriceHistory() {
 
 // ======== 批量导入商品功能 ========
 
-// 批量导入商品链接
+// 批量导入商品链接 - 修复版
 function importBatchProducts() {
   // 读取批量导入文本
   const batchText = $persistentStore.read("vmall.batchImportText") || 
@@ -1099,10 +1109,11 @@ function importBatchProducts() {
   const config = getConfig();
   const existingProducts = new Set();
   
-  // 收集当前配置的商品URL
-  config.productLinks.forEach(product => {
+  // 收集当前配置的商品URL - 替换 forEach 为 for 循环
+  for (let i = 0; i < config.productLinks.length; i++) {
+    const product = config.productLinks[i];
     existingProducts.add(product.url);
-  });
+  }
   
   // 计数器
   let importedCount = 0;
@@ -1188,12 +1199,13 @@ function batchCheckProductsById(idList) {
   }
   
   // 构建临时商品链接列表
-  const tempProductLinks = idList.map(id => {
-    return {
-      url: `https://m.vmall.com/product/${id}.html`,
+  const tempProductLinks = [];
+  for (let i = 0; i < idList.length; i++) {
+    tempProductLinks.push({
+      url: `https://m.vmall.com/product/${idList[i]}.html`,
       enabled: true
-    };
-  });
+    });
+  }
   
   // 检查第一个商品，递归检查所有商品
   const results = [];
@@ -1205,7 +1217,7 @@ function batchCheckProductsById(idList) {
 
 // ======== 核心商品检测功能 ========
 
-// 提取页面信息 - 增加对非促销商品价格的处理
+// 提取页面信息 - 增加对非促销商品价格的处理, 修复ES6兼容性问题
 function extractPageInfo(html) {
   // 默认值
   let buttonName = "";
@@ -1358,7 +1370,8 @@ function extractPageInfo(html) {
     if (nextDataMatch && nextDataMatch[1]) {
       try {
         const jsonData = JSON.parse(nextDataMatch[1]);
-        const mainData = jsonData.props?.pageProps?.mainData;
+        // 修复可选链使用
+        const mainData = jsonData.props && jsonData.props.pageProps && jsonData.props.pageProps.mainData;
         if (mainData && mainData.current && mainData.current.base) {
           // 尝试获取第一个产品对象
           const products = Object.values(mainData.current.base);
